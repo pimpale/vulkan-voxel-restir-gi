@@ -307,7 +307,8 @@ void main() {
     rayQueryInitializeEXT(
         ray_query,
         light_top_level_acceleration_structure,
-        gl_RayFlagsCullBackFacingTrianglesEXT, // cull back faces (they have zero importance anyway)
+        // gl_RayFlagsCullBackFacingTrianglesEXT, // cull back faces (they have zero importance anyway)
+        gl_RayFlagsNoneEXT,
         0xFF,
         origin,
         t_min,

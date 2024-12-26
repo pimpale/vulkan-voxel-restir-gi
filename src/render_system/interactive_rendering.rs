@@ -36,10 +36,9 @@ use winit::window::Window;
 use crate::camera::RenderingPreferences;
 
 use super::{
-    accumulate_shader,
     bvh::BvhNode,
-    nee_pdf_shader, raygen_shader, raytrace_shader,
-    vertex::{InstanceData, Vertex3D},
+    shader::{accumulate_shader, nee_pdf_shader, raygen_shader, raytrace_shader},
+    vertex::InstanceData,
 };
 
 pub fn get_device_for_rendering_on(
@@ -203,6 +202,85 @@ pub fn get_surface_extent(surface: &Surface) -> [u32; 2] {
     window.inner_size().into()
 }
 
+struct Sample {
+    // visible point and surface normal
+    pub x_v: Vec<Subbuffer<[f32]>>, // vec3
+    pub n_v: Vec<Subbuffer<[f32]>>, // vec3
+    // sample point and surface normal
+    pub x_s: Vec<Subbuffer<[f32]>>, // vec3
+    pub n_s: Vec<Subbuffer<[f32]>>, // vec3
+    // outgoing radiance at sample point
+    pub l_o_hat: Vec<Subbuffer<[f32]>>, // vec3
+    // random seed used for sample
+    pub seed: Vec<Subbuffer<[u32]>>, // uint
+}
+
+impl Default for Sample {
+    fn default() -> Self {
+        Sample {
+            x_v: vec![],
+            n_v: vec![],
+            x_s: vec![],
+            n_s: vec![],
+            l_o_hat: vec![],
+            seed: vec![],
+        }
+    }
+}
+impl Sample {
+    fn window_size_dependent_setup(
+        memory_allocator: Arc<StandardMemoryAllocator>,
+        images: &[Arc<Image>],
+        scale: u32,
+    ) -> Self {
+        Sample {
+            x_v: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
+            n_v: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
+            x_s: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
+            n_s: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
+            l_o_hat: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
+            seed: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
+        }
+    }
+}
+
+struct Reservoir {
+    // the current sample in the reservoir
+    pub z: Sample,
+    // weight of the current sample
+    pub w: Vec<Subbuffer<[f32]>>, // float
+    // number of samples seen so far
+    pub m: Vec<Subbuffer<[u32]>>, // uint
+    // the sum of the weights of all samples
+    pub w_sum: Vec<Subbuffer<[f32]>>, // float
+}
+
+impl Default for Reservoir {
+    fn default() -> Self {
+        Reservoir {
+            z: Sample::default(),
+            w: vec![],
+            m: vec![],
+            w_sum: vec![],
+        }
+    }
+}
+
+impl Reservoir {
+    fn window_size_dependent_setup(
+        memory_allocator: Arc<StandardMemoryAllocator>,
+        images: &[Arc<Image>],
+        scale: u32,
+    ) -> Self {
+        Reservoir {
+            z: Sample::window_size_dependent_setup(memory_allocator.clone(), images, scale),
+            w: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
+            m: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
+            w_sum: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
+        }
+    }
+}
+
 pub struct Renderer {
     scale: u32,
     num_bounces: u32,
@@ -226,6 +304,12 @@ pub struct Renderer {
     // the pdf of the selected ray direction only considering light sources
     bounce_nee_pdf: Vec<Subbuffer<[f32]>>,
     bounce_debug_info: Vec<Subbuffer<[f32]>>,
+    // Initial sample buffer
+    restir_initial_samples: Sample,
+    // temporal reservoir
+    restir_temporal_reservoir: Reservoir,
+    // spatial reservoir
+    restir_spatial_reservoir: Reservoir,
     accumulate_target: Vec<Subbuffer<[u8]>>,
     swapchain_images: Vec<Arc<Image>>,
     raygen_pipeline: Arc<ComputePipeline>,
@@ -491,8 +575,8 @@ impl Renderer {
         .unwrap();
 
         let mut renderer = Renderer {
-            scale: 1,
-            num_bounces: 6,
+            scale: 2,
+            num_bounces: 2,
             surface,
             command_buffer_allocator,
             previous_frame_end: Some(sync::now(device.clone()).boxed()),
@@ -520,6 +604,9 @@ impl Renderer {
             bounce_nee_pdf: vec![],
             bounce_debug_info: vec![],
             accumulate_target: vec![],
+            restir_initial_samples: Sample::default(),
+            restir_temporal_reservoir: Reservoir::default(),
+            restir_spatial_reservoir: Reservoir::default(),
         };
 
         // create buffers
@@ -610,6 +697,22 @@ impl Renderer {
             self.scale,
             4 * self.num_bounces,
         );
+        self.restir_initial_samples = Sample::window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            self.scale,
+        );
+        self.restir_temporal_reservoir = Reservoir::window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            self.scale,
+        );
+        self.restir_spatial_reservoir = Reservoir::window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            self.scale,
+        );
+        // the final image
         self.accumulate_target = window_size_dependent_setup(
             self.memory_allocator.clone(),
             &self.swapchain_images,

@@ -88,7 +88,7 @@ void main() {
                 float px = bsdf_pdf;
                 float reweighting_factor = px / qx;
 
-                sample_color = input_emissivity[bid] + sample_color * input_reflectivity[bid] * reweighting_factor * ray_valid;
+                sample_color = input_emissivity[bid] + input_reflectivity[bid] * sample_color * reweighting_factor * ray_valid;
             }
             
             // render debug info
@@ -97,7 +97,7 @@ void main() {
                 const uint bid = bounce_to_render * srcysize * srcxsize 
                                + srcy   * srcxsize 
                                + srcx;
-                sample_color = vec3(input_nee_pdf[bid], input_reflectivity[bid].g*10, 0.0);
+                sample_color = vec3(0.0, input_reflectivity[bid].g*10, 0.0);
             }
 
             color += sample_color;

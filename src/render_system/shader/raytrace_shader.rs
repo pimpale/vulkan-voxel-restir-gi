@@ -281,14 +281,23 @@ BvhTraverseResult traverseBvh(vec3 point, vec3 normal, uint seed) {
 }
 
 // returns a vector sampled from the hemisphere with positive y
+// sample is uniformly weighted
+// https://cseweb.ucsd.edu/classes/sp17/cse168-a/CSE168_08_PathTracing.pdf
+vec3 uniformSampleHemisphere(vec2 uv) {
+    float u = 2 * M_PI * uv.x;
+    float v = sqrt(max(0, 1.0 - uv.y*uv.y));
+
+    return vec3(v * cos(u), uv.y, v * sin(u));
+}
+
+// returns a vector sampled from the hemisphere with positive y
 // sample is weighted by cosine of angle between sample and y axis
 // https://cseweb.ucsd.edu/classes/sp17/cse168-a/CSE168_08_PathTracing.pdf
 vec3 cosineWeightedSampleHemisphere(vec2 uv) {
-    float z = uv.x;
-    float r = sqrt(max(0, 1.0 - z));
-    float phi = 2.0 * M_PI * uv.y;
-    
-    return vec3(r * cos(phi), sqrt(z), r * sin(phi));
+    float u = 2 * M_PI * uv.x;
+    float v = sqrt(max(0, 1.0 - uv.y));
+
+    return vec3(v * cos(u), sqrt(uv.y), v * sin(u));
 }
 
 // returns a point sampled from a triangle
@@ -319,6 +328,13 @@ IntersectionCoordinateSystem localCoordinateSystem(vec3[3] tri) {
         normalize(tangent),
         normalize(bitangent)
     );
+}
+
+// returns a vector sampled from the hemisphere defined around the coordinate system defined by normal, tangent, and bitangent
+// normal, tangent and bitangent form a right handed coordinate system
+vec3 alignedUniformSampleHemisphere(vec2 uv, IntersectionCoordinateSystem ics) {
+    vec3 hemsam = uniformSampleHemisphere(uv);
+    return normalize(hemsam.x * ics.tangent + hemsam.y * ics.normal + hemsam.z * ics.bitangent);
 }
 
 // returns a vector sampled from the hemisphere defined around the coordinate system defined by normal, tangent, and bitangent
@@ -530,8 +546,8 @@ void main() {
 
             new_direction = normalize(sampled_light_point - new_origin);
         } else {
-            // cosine weighted hemisphere sample
-            new_direction = alignedCosineWeightedSampleHemisphere(
+            // uniform sample the hemisphere (as this is better for spatial resampling)
+            new_direction = alignedUniformSampleHemisphere(
                 // random uv
                 vec2(
                     murmur3_finalizef(murmur3_combine(seed, 4)),
