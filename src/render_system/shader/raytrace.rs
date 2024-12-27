@@ -19,13 +19,13 @@ layout(set = 0, binding = 1) uniform texture2D tex[];
 
 layout(set = 1, binding = 0) uniform accelerationStructureEXT top_level_acceleration_structure;
 
-layout(buffer_reference, buffer_reference_align=4, scalar) readonly buffer Vertex {
+layout(buffer_reference, buffer_reference_align=4, scalar) readonly restrict buffer Vertex {
     vec3 position;
     uint t;
     vec2 uv;
 };
 
-layout(buffer_reference, buffer_reference_align=4, scalar) readonly buffer BvhNode {
+layout(buffer_reference, buffer_reference_align=4, scalar) readonly restrict buffer BvhNode {
     uint left_node_idx;
     uint right_node_idx_or_prim_idx;
     vec3 min;
@@ -47,47 +47,47 @@ struct InstanceData {
     mat4x3 transform;
 };
 
-layout(set = 1, binding = 1, scalar) readonly buffer InstanceDataBuffer {
+layout(set = 1, binding = 1, scalar) readonly restrict buffer InstanceDataBuffer {
     InstanceData instance_data[];
 };
 
-layout(set = 1, binding = 2, scalar) readonly buffer InputsRayOrigin {
+layout(set = 1, binding = 2, scalar) readonly restrict buffer InputsRayOrigin {
     vec3 input_origin[];
 };
 
-layout(set = 1, binding = 3, scalar) readonly buffer InputsRayDirection {
+layout(set = 1, binding = 3, scalar) readonly restrict buffer InputsRayDirection {
     vec3 input_direction[];
 };
 
-layout(set = 1, binding = 4, scalar) writeonly buffer OutputsRayOrigin {
+layout(set = 1, binding = 4, scalar) writeonly restrict buffer OutputsRayOrigin {
     vec3 output_origin[];
 };
 
-layout(set = 1, binding = 5, scalar) writeonly buffer OutputsRayDirection {
+layout(set = 1, binding = 5, scalar) writeonly restrict buffer OutputsRayDirection {
     vec3 output_direction[];
 };
 
-layout(set = 1, binding = 6, scalar) writeonly buffer OutputsNormal {
+layout(set = 1, binding = 6, scalar) writeonly restrict buffer OutputsNormal {
     vec3 output_normal[];
 };
 
-layout(set = 1, binding = 7, scalar) writeonly buffer OutputsEmissivity {
+layout(set = 1, binding = 7, scalar) writeonly restrict buffer OutputsEmissivity {
     vec3 output_emissivity[];
 };
 
-layout(set = 1, binding = 8, scalar) writeonly buffer OutputsReflectivity {
+layout(set = 1, binding = 8, scalar) writeonly restrict buffer OutputsReflectivity {
     vec3 output_reflectivity[];
 };
 
-layout(set = 1, binding = 9) writeonly buffer OutputsNeeMisWeight {
+layout(set = 1, binding = 9) writeonly restrict buffer OutputsNeeMisWeight {
     float output_nee_mis_weight[];
 };
 
-layout(set = 1, binding = 10) writeonly buffer OutputsBsdfPdf {
+layout(set = 1, binding = 10) writeonly restrict buffer OutputsBsdfPdf {
     float output_bsdf_pdf[];
 };
 
-layout(set = 1, binding = 11) writeonly buffer OutputsDebugInfo {
+layout(set = 1, binding = 11) writeonly restrict buffer OutputsDebugInfo {
     vec4 output_debug_info[];
 };
 

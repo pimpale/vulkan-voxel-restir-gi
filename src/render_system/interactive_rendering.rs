@@ -37,7 +37,10 @@ use crate::camera::RenderingPreferences;
 
 use super::{
     bvh::BvhNode,
-    shader::{nee_pdf, outgoing_radiance, postprocess, raygen, raytrace},
+    shader::{
+        nee_pdf, outgoing_radiance, postprocess, raygen, raytrace, restir_spatial_resampling,
+        restir_temporal_resampling,
+    },
     vertex::InstanceData,
 };
 
@@ -244,6 +247,18 @@ impl Sample {
             seed: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
         }
     }
+
+    fn descriptor_writes(&self, image_index: usize, start_index: usize) -> Vec<WriteDescriptorSet> {
+        let start_index = start_index as u32;
+        vec![
+            WriteDescriptorSet::buffer(start_index + 0, self.x_v[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 1, self.n_v[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 2, self.x_s[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 3, self.n_s[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 4, self.l_o_hat[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 5, self.seed[image_index].clone()),
+        ]
+    }
 }
 
 struct Reservoir {
@@ -280,6 +295,18 @@ impl Reservoir {
             m: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
             w_sum: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
         }
+    }
+
+    fn descriptor_writes(&self, image_index: usize, start_index: usize) -> Vec<WriteDescriptorSet> {
+        let mut writes = self.z.descriptor_writes(image_index, start_index);
+        let start_index = (start_index + writes.len()) as u32;
+        writes.extend([
+            WriteDescriptorSet::buffer(start_index + 6, self.w[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 7, self.m[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 8, self.w_sum[image_index].clone()),
+        ]);
+
+        writes
     }
 }
 
@@ -321,6 +348,8 @@ pub struct Renderer {
     nee_pdf_pipeline: Arc<ComputePipeline>,
     outgoing_radiance_pipeline: Arc<ComputePipeline>,
     postprocess_pipeline: Arc<ComputePipeline>,
+    restir_temporal_resampling_pipeline: Arc<ComputePipeline>,
+    restir_spatial_resampling_pipeline: Arc<ComputePipeline>,
     wdd_needs_rebuild: bool,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     frame_count: u32,
@@ -585,6 +614,72 @@ impl Renderer {
             .unwrap()
         };
 
+        let restir_temporal_resampling_pipeline = {
+            let cs = restir_temporal_resampling::load(device.clone())
+                .unwrap()
+                .entry_point("main")
+                .unwrap();
+
+            let stage = PipelineShaderStageCreateInfo::new(cs);
+
+            let layout = {
+                let mut layout_create_info =
+                    PipelineDescriptorSetLayoutCreateInfo::from_stages(&[stage.clone()]);
+
+                // enable push descriptor for set 0
+                layout_create_info.set_layouts[0].flags |=
+                    DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR;
+
+                PipelineLayout::new(
+                    device.clone(),
+                    layout_create_info
+                        .into_pipeline_layout_create_info(device.clone())
+                        .unwrap(),
+                )
+                .unwrap()
+            };
+
+            ComputePipeline::new(
+                device.clone(),
+                None,
+                ComputePipelineCreateInfo::stage_layout(stage, layout),
+            )
+            .unwrap()
+        };
+
+        let restir_spatial_resampling_pipeline = {
+            let cs = restir_spatial_resampling::load(device.clone())
+                .unwrap()
+                .entry_point("main")
+                .unwrap();
+
+            let stage = PipelineShaderStageCreateInfo::new(cs);
+
+            let layout = {
+                let mut layout_create_info =
+                    PipelineDescriptorSetLayoutCreateInfo::from_stages(&[stage.clone()]);
+
+                // enable push descriptor for set 0
+                layout_create_info.set_layouts[0].flags |=
+                    DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR;
+
+                PipelineLayout::new(
+                    device.clone(),
+                    layout_create_info
+                        .into_pipeline_layout_create_info(device.clone())
+                        .unwrap(),
+                )
+                .unwrap()
+            };
+
+            ComputePipeline::new(
+                device.clone(),
+                None,
+                ComputePipelineCreateInfo::stage_layout(stage, layout),
+            )
+            .unwrap()
+        };
+
         let texture_atlas = load_textures(
             texture_atlas,
             queue.clone(),
@@ -625,6 +720,8 @@ impl Renderer {
             nee_pdf_pipeline,
             outgoing_radiance_pipeline,
             postprocess_pipeline,
+            restir_temporal_resampling_pipeline,
+            restir_spatial_resampling_pipeline,
             descriptor_set_allocator,
             swapchain_images,
             memory_allocator,
@@ -1112,7 +1209,7 @@ impl Renderer {
                 self.restir_initial_samples.x_v[image_index as usize].clone(),
             ))
             .unwrap()
-            // Step 2: copy the first bounce ray direction to the initial sample buffer n_v
+            // Step 2: copy the first bounce normal to the initial sample buffer n_v
             .copy_buffer(CopyBufferInfo::buffers(
                 self.ray_directions[image_index as usize]
                     .as_bytes()
@@ -1130,7 +1227,7 @@ impl Renderer {
                 self.restir_initial_samples.x_s[image_index as usize].clone(),
             ))
             .unwrap()
-            // Step 4: copy the second bounce ray direction to the initial sample buffer n_s
+            // Step 4: copy the second bounce normal to the initial sample buffer n_s
             .copy_buffer(CopyBufferInfo::buffers(
                 self.ray_directions[image_index as usize]
                     .as_bytes()
@@ -1148,6 +1245,82 @@ impl Renderer {
                 self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
             ))
             .unwrap();
+
+        // // update temporal reservoir
+
+        // // first we have to bind the descriptor sets
+        // let mut descriptor_writes = vec![];
+        // descriptor_writes.extend(
+        //     self.restir_initial_samples
+        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
+        // );
+        // descriptor_writes.extend(
+        //     self.restir_temporal_reservoir
+        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
+        // );
+
+        // builder
+        //     .bind_pipeline_compute(self.restir_temporal_resampling_pipeline.clone())
+        //     .unwrap()
+        //     .push_descriptor_set(
+        //         PipelineBindPoint::Compute,
+        //         self.restir_temporal_resampling_pipeline.layout().clone(),
+        //         0,
+        //         descriptor_writes.into(),
+        //     )
+        //     .unwrap()
+        //     .push_constants(
+        //         self.restir_temporal_resampling_pipeline.layout().clone(),
+        //         0,
+        //         postprocess::PushConstants {
+        //             debug_view: rendering_preferences.debug_view,
+        //             srcscale: self.scale,
+        //             dstscale: 1,
+        //             xsize: extent[0],
+        //             ysize: extent[1],
+        //         },
+        //     )
+        //     .unwrap()
+        //     .dispatch(self.group_count(&extent))
+        //     .unwrap();
+
+        // // update spatial reservoir
+
+        // // first we have to bind the descriptor sets
+        // let mut descriptor_writes = vec![];
+        // descriptor_writes.extend(
+        //     self.restir_temporal_reservoir
+        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
+        // );
+        // descriptor_writes.extend(
+        //     self.restir_spatial_reservoir
+        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
+        // );
+
+        // builder
+        //     .bind_pipeline_compute(self.restir_spatial_resampling_pipeline.clone())
+        //     .unwrap()
+        //     .push_descriptor_set(
+        //         PipelineBindPoint::Compute,
+        //         self.restir_spatial_resampling_pipeline.layout().clone(),
+        //         0,
+        //         descriptor_writes.into(),
+        //     )
+        //     .unwrap()
+        //     .push_constants(
+        //         self.restir_spatial_resampling_pipeline.layout().clone(),
+        //         0,
+        //         postprocess::PushConstants {
+        //             debug_view: rendering_preferences.debug_view,
+        //             srcscale: self.scale,
+        //             dstscale: 1,
+        //             xsize: extent[0],
+        //             ysize: extent[1],
+        //         },
+        //     )
+        //     .unwrap()
+        //     .dispatch(self.group_count(&extent))
+        //     .unwrap();
 
         // aggregate the samples and write to swapchain image
         builder

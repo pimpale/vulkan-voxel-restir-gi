@@ -10,35 +10,35 @@ vulkano_shaders::shader! {
 
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, scalar) readonly buffer InputOrigin {
+layout(set = 0, binding = 0, scalar) readonly restrict buffer InputOrigin {
     vec3 input_origin[];
 };
 
-layout(set = 0, binding = 1, scalar) readonly buffer InputDirection {
+layout(set = 0, binding = 1, scalar) readonly restrict buffer InputDirection {
     vec3 input_direction[];
 };
 
-layout(set = 0, binding = 2, scalar) readonly buffer InputEmissivity {
+layout(set = 0, binding = 2, scalar) readonly restrict buffer InputEmissivity {
     vec3 input_emissivity[];
 };
 
-layout(set = 0, binding = 3, scalar) readonly buffer InputReflectivity {
+layout(set = 0, binding = 3, scalar) readonly restrict buffer InputReflectivity {
     vec3 input_reflectivity[];
 };
 
-layout(set = 0, binding = 4, scalar) readonly buffer InputNeeMisWeight {
+layout(set = 0, binding = 4, scalar) readonly restrict buffer InputNeeMisWeight {
     float input_nee_mis_weight[];
 };
 
-layout(set = 0, binding = 5, scalar) readonly buffer InputBsdfPdf {
+layout(set = 0, binding = 5, scalar) readonly restrict buffer InputBsdfPdf {
     float input_bsdf_pdf[];
 };
 
-layout(set = 0, binding = 6, scalar) readonly buffer InputNeePdf {
+layout(set = 0, binding = 6, scalar) readonly restrict buffer InputNeePdf {
     float input_nee_pdf[];
 };
 
-layout(set = 0, binding = 7, scalar) writeonly buffer OutputOutgoingRadiance {
+layout(set = 0, binding = 7, scalar) writeonly restrict buffer OutputOutgoingRadiance {
     vec3 output_outgoing_radiance[];
 };
 

@@ -10,15 +10,15 @@ vulkano_shaders::shader! {
 
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
-layout(set = 0, binding = 0, scalar) readonly buffer InputOutgoingRadiance {
+layout(set = 0, binding = 0, scalar) readonly restrict buffer InputOutgoingRadiance {
     vec3 input_outgoing_radiance[];
 };
 
-layout(set = 0, binding = 1, scalar) readonly buffer InputDebugInfo {
+layout(set = 0, binding = 1, scalar) readonly restrict buffer InputDebugInfo {
     vec4 input_debug_info[];
 };
 
-layout(set = 0, binding = 2) writeonly buffer OutputImage {
+layout(set = 0, binding = 2) writeonly restrict buffer OutputImage {
     u8vec4 output_image[];
 };
 
