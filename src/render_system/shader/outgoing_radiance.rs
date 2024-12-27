@@ -78,9 +78,10 @@ void main() {
         float reweighting_factor = px / qx;
 
         outgoing_radiance = input_emissivity[bid] + input_reflectivity[bid] * outgoing_radiance * reweighting_factor * ray_valid;
+        
+        // write to global memory
+        output_outgoing_radiance[bid] = outgoing_radiance;
     }
-
-    output_outgoing_radiance[y*xsize + x] = outgoing_radiance;
 }
 ",
 }

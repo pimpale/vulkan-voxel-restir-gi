@@ -133,7 +133,6 @@ impl GameWorld {
             memory_allocator.clone(),
             descriptor_set_allocator.clone(),
             texture_atlas,
-            1,
         );
 
         let scene = Scene::new(
@@ -200,14 +199,11 @@ impl GameWorld {
         for change in changes {
             match change {
                 WorldChange::GlobalEntityAdd(entity_id, entity_creation_data) => {
-                    self.entities.insert(
-                        *entity_id,
-                        Entity {
-                            mesh: entity_creation_data.mesh.clone(),
-                            isometry: entity_creation_data.isometry.clone(),
-                            physics_data: entity_creation_data.physics.clone(),
-                        },
-                    );
+                    self.entities.insert(*entity_id, Entity {
+                        mesh: entity_creation_data.mesh.clone(),
+                        isometry: entity_creation_data.isometry.clone(),
+                        physics_data: entity_creation_data.physics.clone(),
+                    });
                 }
                 WorldChange::GlobalEntityRemove(entity_id) => {
                     self.entities.remove(&entity_id);
@@ -302,14 +298,11 @@ impl GameWorld {
 
     // add a new entity to the world
     pub fn add_entity(&mut self, entity_id: u32, entity_creation_data: EntityCreationData) {
-        self.entities.insert(
-            entity_id,
-            Entity {
-                mesh: entity_creation_data.mesh.clone(),
-                isometry: entity_creation_data.isometry.clone(),
-                physics_data: entity_creation_data.physics.clone(),
-            },
-        );
+        self.entities.insert(entity_id, Entity {
+            mesh: entity_creation_data.mesh.clone(),
+            isometry: entity_creation_data.isometry.clone(),
+            physics_data: entity_creation_data.physics.clone(),
+        });
         self.changes_since_last_step
             .push(WorldChange::GlobalEntityAdd(
                 entity_id,

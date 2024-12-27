@@ -7,7 +7,7 @@ use vulkano::{
     acceleration_structure::AccelerationStructure,
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyBufferToImageInfo,
         PrimaryCommandBufferAbstract, allocator::StandardCommandBufferAllocator,
     },
     descriptor_set::{
@@ -37,10 +37,7 @@ use crate::camera::RenderingPreferences;
 
 use super::{
     bvh::BvhNode,
-    shader::{
-        nee_pdf_shader, outgoing_radiance_shader, postprocess_shader, raygen_shader,
-        raytrace_shader,
-    },
+    shader::{nee_pdf, outgoing_radiance, postprocess, raygen, raytrace},
     vertex::InstanceData,
 };
 
@@ -182,7 +179,9 @@ fn window_size_dependent_setup<T: BufferContents>(
                 memory_allocator.clone(),
                 BufferCreateInfo {
                     usage: if transfer_src {
-                        BufferUsage::STORAGE_BUFFER | BufferUsage::TRANSFER_SRC
+                        BufferUsage::STORAGE_BUFFER
+                            | BufferUsage::TRANSFER_SRC
+                            | BufferUsage::TRANSFER_DST
                     } else {
                         BufferUsage::STORAGE_BUFFER
                     },
@@ -306,6 +305,8 @@ pub struct Renderer {
     bounce_bsdf_pdf: Vec<Subbuffer<[f32]>>,
     // the pdf of the selected ray direction only considering light sources
     bounce_nee_pdf: Vec<Subbuffer<[f32]>>,
+    // the outgoing radiance at each bounce point
+    bounce_outgoing_radiance: Vec<Subbuffer<[f32]>>,
     debug_info: Vec<Subbuffer<[f32]>>,
     // Initial sample buffer
     restir_initial_samples: Sample,
@@ -400,7 +401,6 @@ impl Renderer {
         memory_allocator: Arc<StandardMemoryAllocator>,
         descriptor_set_allocator: Arc<StandardDescriptorSetAllocator>,
         texture_atlas: Vec<(RgbaImage, RgbaImage, RgbaImage)>,
-        num_samples: u32,
     ) -> Renderer {
         let texture_atlas = texture_atlas
             .into_iter()
@@ -414,7 +414,7 @@ impl Renderer {
         let (swapchain, swapchain_images) = create_swapchain(device.clone(), surface.clone());
 
         let raygen_pipeline = {
-            let cs = raygen_shader::load(device.clone())
+            let cs = raygen::load(device.clone())
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -446,7 +446,7 @@ impl Renderer {
         };
 
         let raytrace_pipeline = {
-            let cs = raytrace_shader::load(device.clone())
+            let cs = raytrace::load(device.clone())
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -487,7 +487,7 @@ impl Renderer {
         };
 
         let nee_pdf_pipeline = {
-            let cs = nee_pdf_shader::load(device.clone())
+            let cs = nee_pdf::load(device.clone())
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -520,7 +520,7 @@ impl Renderer {
         };
 
         let outgoing_radiance_pipeline = {
-            let cs = outgoing_radiance_shader::load(device.clone())
+            let cs = outgoing_radiance::load(device.clone())
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -553,7 +553,7 @@ impl Renderer {
         };
 
         let postprocess_pipeline = {
-            let cs = postprocess_shader::load(device.clone())
+            let cs = postprocess::load(device.clone())
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -612,7 +612,7 @@ impl Renderer {
         .unwrap();
 
         let mut renderer = Renderer {
-            scale: 2,
+            scale: 1,
             num_bounces: 2,
             surface,
             command_buffer_allocator,
@@ -640,6 +640,7 @@ impl Renderer {
             bounce_nee_mis_weight: vec![],
             bounce_bsdf_pdf: vec![],
             bounce_nee_pdf: vec![],
+            bounce_outgoing_radiance: vec![],
             debug_info: vec![],
             postprocess_target: vec![],
             restir_initial_samples: Sample::default(),
@@ -727,6 +728,13 @@ impl Renderer {
             true,
             self.scale,
             1 * self.num_bounces,
+        );
+        self.bounce_outgoing_radiance = window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            true,
+            self.scale,
+            3 * self.num_bounces,
         );
         self.restir_initial_samples = Sample::window_size_dependent_setup(
             self.memory_allocator.clone(),
@@ -849,8 +857,8 @@ impl Renderer {
             .push_constants(
                 self.raygen_pipeline.layout().clone(),
                 0,
-                raygen_shader::PushConstants {
-                    camera: raygen_shader::Camera {
+                raygen::PushConstants {
+                    camera: raygen::Camera {
                         eye: eye.coords,
                         front,
                         right,
@@ -953,7 +961,7 @@ impl Renderer {
                 .push_constants(
                     self.raytrace_pipeline.layout().clone(),
                     0,
-                    raytrace_shader::PushConstants {
+                    raytrace::PushConstants {
                         nee_type: rendering_preferences.nee_type,
                         bounce: bounce,
                         xsize: rt_extent[0],
@@ -966,8 +974,6 @@ impl Renderer {
                 .dispatch(self.group_count(&rt_extent))
                 .unwrap();
         }
-
-        // initialize initial sample
 
         // bind nee pdf pipeline
         // this is done in a separate pass for better memory access patterns
@@ -1017,16 +1023,6 @@ impl Renderer {
                             buffer: self.bounce_nee_pdf[image_index as usize].as_bytes().clone(),
                             range: b * sect_sz..(b + 1) * sect_sz,
                         }),
-                        // // output debug info
-                        // WriteDescriptorSet::buffer_with_range(
-                        //     6,
-                        //     DescriptorBufferInfo {
-                        //         buffer: self.bounce_debug_info[image_index as usize]
-                        //             .as_bytes()
-                        //             .clone(),
-                        //         range: b * 4 * sect_sz..(b + 1) * 4 * sect_sz,
-                        //     },
-                        // ),
                     ]
                     .into(),
                 )
@@ -1034,7 +1030,7 @@ impl Renderer {
                 .push_constants(
                     self.nee_pdf_pipeline.layout().clone(),
                     0,
-                    nee_pdf_shader::PushConstants {
+                    nee_pdf::PushConstants {
                         nee_type: rendering_preferences.nee_type,
                         xsize: rt_extent[0],
                         ysize: rt_extent[1],
@@ -1047,7 +1043,7 @@ impl Renderer {
                 .unwrap();
         }
 
-        // accumulate samples and bounces and write to swapchain image
+        // compute the outgoing radiance at all bounces
         builder
             .bind_pipeline_compute(self.outgoing_radiance_pipeline.clone())
             .unwrap()
@@ -1086,7 +1082,7 @@ impl Renderer {
                     ),
                     WriteDescriptorSet::buffer(
                         7,
-                        self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
+                        self.bounce_outgoing_radiance[image_index as usize].clone(),
                     ),
                 ]
                 .into(),
@@ -1095,7 +1091,7 @@ impl Renderer {
             .push_constants(
                 self.outgoing_radiance_pipeline.layout().clone(),
                 0,
-                outgoing_radiance_shader::PushConstants {
+                outgoing_radiance::PushConstants {
                     num_bounces: self.num_bounces,
                     xsize: rt_extent[0],
                     ysize: rt_extent[1],
@@ -1105,7 +1101,55 @@ impl Renderer {
             .dispatch(self.group_count(&rt_extent))
             .unwrap();
 
-        // accumulate samples and bounces and write to swapchain image
+        // initialize initial sample
+        builder
+            // Step 1: copy the first bounce ray position to the initial sample buffer x_v
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.ray_origins[image_index as usize]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                self.restir_initial_samples.x_v[image_index as usize].clone(),
+            ))
+            .unwrap()
+            // Step 2: copy the first bounce ray direction to the initial sample buffer n_v
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.ray_directions[image_index as usize]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                self.restir_initial_samples.n_v[image_index as usize].clone(),
+            ))
+            .unwrap()
+            // Step 3: copy the second bounce ray position to the initial sample buffer x_s
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.ray_origins[image_index as usize]
+                    .as_bytes()
+                    .clone()
+                    .slice(2 * sect_sz * 3..3 * sect_sz * 3),
+                self.restir_initial_samples.x_s[image_index as usize].clone(),
+            ))
+            .unwrap()
+            // Step 4: copy the second bounce ray direction to the initial sample buffer n_s
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.ray_directions[image_index as usize]
+                    .as_bytes()
+                    .clone()
+                    .slice(2 * sect_sz * 3..3 * sect_sz * 3),
+                self.restir_initial_samples.n_s[image_index as usize].clone(),
+            ))
+            .unwrap()
+            // Step 5: write the outgoing radiance to the initial sample buffer l_o_hat
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.bounce_outgoing_radiance[image_index as usize]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
+            ))
+            .unwrap();
+
+        // aggregate the samples and write to swapchain image
         builder
             .bind_pipeline_compute(self.postprocess_pipeline.clone())
             .unwrap()
@@ -1114,10 +1158,12 @@ impl Renderer {
                 self.postprocess_pipeline.layout().clone(),
                 0,
                 vec![
-                    WriteDescriptorSet::buffer(
-                        0,
-                        self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
-                    ),
+                    WriteDescriptorSet::buffer_with_range(0, DescriptorBufferInfo {
+                        buffer: self.bounce_outgoing_radiance[image_index as usize]
+                            .as_bytes()
+                            .clone(),
+                        range: 0 * sect_sz * 3..1 * sect_sz * 3,
+                    }),
                     WriteDescriptorSet::buffer(1, self.debug_info[image_index as usize].clone()),
                     WriteDescriptorSet::buffer(
                         2,
@@ -1130,7 +1176,7 @@ impl Renderer {
             .push_constants(
                 self.postprocess_pipeline.layout().clone(),
                 0,
-                postprocess_shader::PushConstants {
+                postprocess::PushConstants {
                     debug_view: rendering_preferences.debug_view,
                     srcscale: self.scale,
                     dstscale: 1,

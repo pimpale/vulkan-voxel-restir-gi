@@ -1,5 +1,7 @@
-pub mod raygen_shader;
-pub mod raytrace_shader;
-pub mod postprocess_shader;
-pub mod outgoing_radiance_shader;
-pub mod nee_pdf_shader;
+pub mod raygen;
+pub mod raytrace;
+pub mod postprocess;
+pub mod outgoing_radiance;
+pub mod nee_pdf;
+pub mod restir_temporal_resampling;
+pub mod restir_spatial_resampling;
