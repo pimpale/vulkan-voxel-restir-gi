@@ -101,7 +101,7 @@ void main() {
     vec2 uv = screen_to_uv(gl_GlobalInvocationID.xy, camera.screen_size);
     float aspect = float(camera.screen_size.x) / float(camera.screen_size.y);
 
-    vec2 jitter = 0.01*vec2(
+    vec2 jitter = 0.00*vec2(
         (1.0/camera.screen_size.x)*(murmur3_finalizef(murmur3_combine(seed, 0))-0.5),
         (1.0/camera.screen_size.y)*(murmur3_finalizef(murmur3_combine(seed, 1))-0.5)
     );

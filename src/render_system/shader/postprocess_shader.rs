@@ -40,6 +40,7 @@ void main() {
     const uint srcysize = ysize * srcscale;
 
     vec3 color = vec3(0.0);
+    vec3 debug_info = vec3(0.0);
     for (uint scaley = 0; scaley < srcscale; scaley++) {
         const uint srcy = gl_GlobalInvocationID.y * srcscale + scaley;
         for(uint scalex = 0; scalex < srcscale; scalex++) {
@@ -50,11 +51,20 @@ void main() {
 
             // fetch the color for this sample
             color += input_outgoing_radiance[id];
+            // fetch the debug info for this sample
+            debug_info += input_debug_info[id].xyz;
         }
     }
 
+    vec3 pixel_color;
+    if (debug_view == 0) {
+        pixel_color = color;
+    } else {
+        pixel_color = debug_info;
+    }
+
     // average the samples
-    vec3 pixel_color = color / float(srcscale*srcscale);
+    pixel_color = pixel_color / float(srcscale*srcscale);
     u8vec4 pixel_data = u8vec4(pixel_color.zyx*255, 255);
 
     // write to a patch of size dstscale*dstscale

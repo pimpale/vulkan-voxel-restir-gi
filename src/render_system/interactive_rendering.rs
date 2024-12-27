@@ -306,7 +306,7 @@ pub struct Renderer {
     bounce_bsdf_pdf: Vec<Subbuffer<[f32]>>,
     // the pdf of the selected ray direction only considering light sources
     bounce_nee_pdf: Vec<Subbuffer<[f32]>>,
-    bounce_debug_info: Vec<Subbuffer<[f32]>>,
+    debug_info: Vec<Subbuffer<[f32]>>,
     // Initial sample buffer
     restir_initial_samples: Sample,
     // temporal reservoir
@@ -640,7 +640,7 @@ impl Renderer {
             bounce_nee_mis_weight: vec![],
             bounce_bsdf_pdf: vec![],
             bounce_nee_pdf: vec![],
-            bounce_debug_info: vec![],
+            debug_info: vec![],
             postprocess_target: vec![],
             restir_initial_samples: Sample::default(),
             restir_temporal_reservoir: Reservoir::default(),
@@ -728,13 +728,6 @@ impl Renderer {
             self.scale,
             1 * self.num_bounces,
         );
-        self.bounce_debug_info = window_size_dependent_setup(
-            self.memory_allocator.clone(),
-            &self.swapchain_images,
-            true,
-            self.scale,
-            4 * self.num_bounces,
-        );
         self.restir_initial_samples = Sample::window_size_dependent_setup(
             self.memory_allocator.clone(),
             &self.swapchain_images,
@@ -749,6 +742,14 @@ impl Renderer {
             self.memory_allocator.clone(),
             &self.swapchain_images,
             self.scale,
+        );
+        // debug info (single image)
+        self.debug_info = window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            true,
+            self.scale,
+            4,
         );
         // the final image
         self.postprocess_target = window_size_dependent_setup(
@@ -941,12 +942,10 @@ impl Renderer {
                                 .clone(),
                             range: b * sect_sz..(b + 1) * sect_sz,
                         }),
-                        WriteDescriptorSet::buffer_with_range(11, DescriptorBufferInfo {
-                            buffer: self.bounce_debug_info[image_index as usize]
-                                .as_bytes()
-                                .clone(),
-                            range: b * 4 * sect_sz..(b + 1) * 4 * sect_sz,
-                        }),
+                        WriteDescriptorSet::buffer(
+                            11,
+                            self.debug_info[image_index as usize].clone(),
+                        ),
                     ]
                     .into(),
                 )
@@ -1119,10 +1118,7 @@ impl Renderer {
                         0,
                         self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
                     ),
-                    // WriteDescriptorSet::buffer(
-                    //     1,
-                    //     self.bounce_debug_info[image_index as usize].clone(),
-                    // ),
+                    WriteDescriptorSet::buffer(1, self.debug_info[image_index as usize].clone()),
                     WriteDescriptorSet::buffer(
                         2,
                         self.postprocess_target[image_index as usize].clone(),
