@@ -301,9 +301,9 @@ impl Reservoir {
         let mut writes = self.z.descriptor_writes(image_index, start_index);
         let start_index = (start_index + writes.len()) as u32;
         writes.extend([
-            WriteDescriptorSet::buffer(start_index + 6, self.w[image_index].clone()),
-            WriteDescriptorSet::buffer(start_index + 7, self.m[image_index].clone()),
-            WriteDescriptorSet::buffer(start_index + 8, self.w_sum[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 0, self.w[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 1, self.m[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 2, self.w_sum[image_index].clone()),
         ]);
 
         writes
@@ -1246,81 +1246,75 @@ impl Renderer {
             ))
             .unwrap();
 
-        // // update temporal reservoir
+        // update temporal reservoir
+        builder
+            .bind_pipeline_compute(self.restir_temporal_resampling_pipeline.clone())
+            .unwrap()
+            .push_descriptor_set(
+                PipelineBindPoint::Compute,
+                self.restir_temporal_resampling_pipeline.layout().clone(),
+                0,
+                {
+                    let mut descriptor_writes = vec![];
+                    descriptor_writes.extend(
+                        self.restir_initial_samples
+                            .descriptor_writes(image_index as usize, descriptor_writes.len()),
+                    );
+                    descriptor_writes.extend(
+                        self.restir_temporal_reservoir
+                            .descriptor_writes(image_index as usize, descriptor_writes.len()),
+                    );
+                    descriptor_writes.into()
+                },
+            )
+            .unwrap()
+            .push_constants(
+                self.restir_temporal_resampling_pipeline.layout().clone(),
+                0,
+                restir_temporal_resampling::PushConstants {
+                    always_zero: 0,
+                    xsize: rt_extent[0],
+                    ysize: rt_extent[1],
+                },
+            )
+            .unwrap()
+            .dispatch(self.group_count(&rt_extent))
+            .unwrap();
 
-        // // first we have to bind the descriptor sets
-        // let mut descriptor_writes = vec![];
-        // descriptor_writes.extend(
-        //     self.restir_initial_samples
-        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
-        // );
-        // descriptor_writes.extend(
-        //     self.restir_temporal_reservoir
-        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
-        // );
-
-        // builder
-        //     .bind_pipeline_compute(self.restir_temporal_resampling_pipeline.clone())
-        //     .unwrap()
-        //     .push_descriptor_set(
-        //         PipelineBindPoint::Compute,
-        //         self.restir_temporal_resampling_pipeline.layout().clone(),
-        //         0,
-        //         descriptor_writes.into(),
-        //     )
-        //     .unwrap()
-        //     .push_constants(
-        //         self.restir_temporal_resampling_pipeline.layout().clone(),
-        //         0,
-        //         postprocess::PushConstants {
-        //             debug_view: rendering_preferences.debug_view,
-        //             srcscale: self.scale,
-        //             dstscale: 1,
-        //             xsize: extent[0],
-        //             ysize: extent[1],
-        //         },
-        //     )
-        //     .unwrap()
-        //     .dispatch(self.group_count(&extent))
-        //     .unwrap();
-
-        // // update spatial reservoir
-
-        // // first we have to bind the descriptor sets
-        // let mut descriptor_writes = vec![];
-        // descriptor_writes.extend(
-        //     self.restir_temporal_reservoir
-        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
-        // );
-        // descriptor_writes.extend(
-        //     self.restir_spatial_reservoir
-        //         .descriptor_writes(image_index as usize, descriptor_writes.len()),
-        // );
-
-        // builder
-        //     .bind_pipeline_compute(self.restir_spatial_resampling_pipeline.clone())
-        //     .unwrap()
-        //     .push_descriptor_set(
-        //         PipelineBindPoint::Compute,
-        //         self.restir_spatial_resampling_pipeline.layout().clone(),
-        //         0,
-        //         descriptor_writes.into(),
-        //     )
-        //     .unwrap()
-        //     .push_constants(
-        //         self.restir_spatial_resampling_pipeline.layout().clone(),
-        //         0,
-        //         postprocess::PushConstants {
-        //             debug_view: rendering_preferences.debug_view,
-        //             srcscale: self.scale,
-        //             dstscale: 1,
-        //             xsize: extent[0],
-        //             ysize: extent[1],
-        //         },
-        //     )
-        //     .unwrap()
-        //     .dispatch(self.group_count(&extent))
-        //     .unwrap();
+        // update spatial reservoir
+        builder
+            .bind_pipeline_compute(self.restir_spatial_resampling_pipeline.clone())
+            .unwrap()
+            .push_descriptor_set(
+                PipelineBindPoint::Compute,
+                self.restir_spatial_resampling_pipeline.layout().clone(),
+                0,
+                {
+                    let mut descriptor_writes = vec![];
+                    descriptor_writes.extend(
+                        self.restir_temporal_reservoir
+                            .descriptor_writes(image_index as usize, descriptor_writes.len()),
+                    );
+                    descriptor_writes.extend(
+                        self.restir_spatial_reservoir
+                            .descriptor_writes(image_index as usize, descriptor_writes.len()),
+                    );
+                    descriptor_writes.into()
+                },
+            )
+            .unwrap()
+            .push_constants(
+                self.restir_spatial_resampling_pipeline.layout().clone(),
+                0,
+                restir_spatial_resampling::PushConstants {
+                    always_zero: 0,
+                    xsize: rt_extent[0],
+                    ysize: rt_extent[1],
+                },
+            )
+            .unwrap()
+            .dispatch(self.group_count(&rt_extent))
+            .unwrap();
 
         // aggregate the samples and write to swapchain image
         builder

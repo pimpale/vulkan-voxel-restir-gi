@@ -23,27 +23,27 @@ layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 //     pub seed: Vec<Subbuffer<[u32]>>, // uint
 // }
 
-layout(set = 0, binding = 0, scalar) readonly buffer InputInitialSampleXV {
+layout(set = 0, binding = 0, scalar) readonly restrict buffer InputInitialSampleXV {
     vec3 is_x_v[];
 };
 
-layout(set = 0, binding = 1, scalar) readonly buffer InputInitialSampleNV {
+layout(set = 0, binding = 1, scalar) readonly restrict buffer InputInitialSampleNV {
     vec3 is_n_v[];
 };
 
-layout(set = 0, binding = 2, scalar) readonly buffer InputInitialSampleXS {
+layout(set = 0, binding = 2, scalar) readonly restrict buffer InputInitialSampleXS {
     vec3 is_x_s[];
 };
 
-layout(set = 0, binding = 3, scalar) readonly buffer InputInitialSampleNS {
+layout(set = 0, binding = 3, scalar) readonly restrict buffer InputInitialSampleNS {
     vec3 is_n_s[];
 };
 
-layout(set = 0, binding = 4, scalar) readonly buffer InputInitialSampleLOHat {
+layout(set = 0, binding = 4, scalar) readonly restrict buffer InputInitialSampleLOHat {
     vec3 is_l_o_hat[];
 };
 
-layout(set = 0, binding = 5, scalar) readonly buffer InputInitialSampleSeed {
+layout(set = 0, binding = 5, scalar) readonly restrict buffer InputInitialSampleSeed {
     uint is_seed[];
 };
 
@@ -59,53 +59,74 @@ layout(set = 0, binding = 5, scalar) readonly buffer InputInitialSampleSeed {
 //     pub w_sum: Vec<Subbuffer<[f32]>>, // float
 // }
 
-layout(set = 0, binding = 6, scalar) readonly buffer InputTemporalReservoirZXV {
+layout(set = 0, binding = 6, scalar) restrict buffer TemporalReservoirZXV {
     vec3 tr_z_x_v[];
 };
 
-layout(set = 0, binding = 7, scalar) readonly buffer InputTemporalReservoirZNV {
+layout(set = 0, binding = 7, scalar) restrict buffer TemporalReservoirZNV {
     vec3 tr_z_n_v[];
 };
 
-layout(set = 0, binding = 8, scalar) readonly buffer InputTemporalReservoirZXS {
+layout(set = 0, binding = 8, scalar) restrict buffer TemporalReservoirZXS {
     vec3 tr_z_x_s[];
 };
 
-layout(set = 0, binding = 9, scalar) readonly buffer InputTemporalReservoirZNS {
+layout(set = 0, binding = 9, scalar) restrict buffer TemporalReservoirZNS {
     vec3 tr_z_n_s[];
 };
 
-layout(set = 0, binding = 10, scalar) readonly buffer InputTemporalReservoirZLOHat {
+layout(set = 0, binding = 10, scalar) restrict buffer TemporalReservoirZLOHat {
     vec3 tr_z_l_o_hat[];
 };
 
-layout(set = 0, binding = 11, scalar) readonly buffer InputTemporalReservoirZSeed {
+layout(set = 0, binding = 11, scalar) restrict buffer TemporalReservoirZSeed {
     uint tr_z_seed[];
 };
 
-layout(set = 0, binding = 12, scalar) readonly buffer InputTemporalReservoirZW {
-    float tr_z_w[];
+layout(set = 0, binding = 12, scalar) restrict buffer TemporalReservoirW {
+    float tr_w[];
 };
 
-layout(set = 0, binding = 13, scalar) readonly buffer InputTemporalReservoirZM {
-    uint tr_z_m[];
+layout(set = 0, binding = 13, scalar) restrict buffer TemporalReservoirM {
+    uint tr_m[];
 };
 
-layout(set = 0, binding = 14, scalar) readonly buffer InputTemporalReservoirZWSum {
-    float tr_z_w_sum[];
+layout(set = 0, binding = 14, scalar) restrict buffer TemporalReservoirWSum {
+    float tr_w_sum[];
 };
 
 layout(push_constant, scalar) uniform PushConstants {
+    // always zero is kept at zero, but prevents the compiler from optimizing out the buffer
+    uint always_zero;
     uint xsize;
     uint ysize;
 };
 
-uint dummyUse() {
-    return 0;
+float dummyUse() {
+    if(always_zero == 0) {
+        return 0;
+    }
+    return is_x_v[0].x
+         + is_n_v[0].x
+         + is_x_s[0].x
+         + is_n_s[0].x
+         + is_l_o_hat[0].x
+         + float(is_seed[0])
+         + tr_z_x_v[0].x
+         + tr_z_n_v[0].x 
+         + tr_z_x_s[0].x 
+         + tr_z_n_s[0].x 
+         + tr_z_l_o_hat[0].x 
+         + float(tr_z_seed[0]) 
+         + tr_w[0] 
+         + tr_m[0] 
+         + tr_w_sum[0];
+
 }
 
 
 void main() {
+    dummyUse();
 }
 
 // void main() {
