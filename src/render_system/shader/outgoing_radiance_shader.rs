@@ -14,31 +14,31 @@ layout(set = 0, binding = 0, scalar) readonly buffer InputOrigin {
     vec3 input_origin[];
 };
 
-layout(set = 0, binding = 1, scalar) readonly buffer InputsDirection {
+layout(set = 0, binding = 1, scalar) readonly buffer InputDirection {
     vec3 input_direction[];
 };
 
-layout(set = 0, binding = 2, scalar) readonly buffer InputsEmissivity {
+layout(set = 0, binding = 2, scalar) readonly buffer InputEmissivity {
     vec3 input_emissivity[];
 };
 
-layout(set = 0, binding = 3, scalar) readonly buffer InputsReflectivity {
+layout(set = 0, binding = 3, scalar) readonly buffer InputReflectivity {
     vec3 input_reflectivity[];
 };
 
-layout(set = 0, binding = 4) readonly buffer InputsNeeMisWeight {
+layout(set = 0, binding = 4, scalar) readonly buffer InputNeeMisWeight {
     float input_nee_mis_weight[];
 };
 
-layout(set = 0, binding = 5) readonly buffer InputsBsdfPdf {
+layout(set = 0, binding = 5, scalar) readonly buffer InputBsdfPdf {
     float input_bsdf_pdf[];
 };
 
-layout(set = 0, binding = 6) readonly buffer InputsNeePdf {
+layout(set = 0, binding = 6, scalar) readonly buffer InputNeePdf {
     float input_nee_pdf[];
 };
 
-layout(set = 0, binding = 7) writeonly buffer OutputsOutgoingRadiance {
+layout(set = 0, binding = 7, scalar) writeonly buffer OutputOutgoingRadiance {
     vec3 output_outgoing_radiance[];
 };
 

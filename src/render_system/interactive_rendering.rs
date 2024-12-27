@@ -37,7 +37,10 @@ use crate::camera::RenderingPreferences;
 
 use super::{
     bvh::BvhNode,
-    shader::{accumulate_shader, nee_pdf_shader, raygen_shader, raytrace_shader},
+    shader::{
+        nee_pdf_shader, outgoing_radiance_shader, postprocess_shader, raygen_shader,
+        raytrace_shader,
+    },
     vertex::InstanceData,
 };
 
@@ -310,12 +313,13 @@ pub struct Renderer {
     restir_temporal_reservoir: Reservoir,
     // spatial reservoir
     restir_spatial_reservoir: Reservoir,
-    accumulate_target: Vec<Subbuffer<[u8]>>,
+    postprocess_target: Vec<Subbuffer<[u8]>>,
     swapchain_images: Vec<Arc<Image>>,
     raygen_pipeline: Arc<ComputePipeline>,
     raytrace_pipeline: Arc<ComputePipeline>,
     nee_pdf_pipeline: Arc<ComputePipeline>,
-    accumulate_pipeline: Arc<ComputePipeline>,
+    outgoing_radiance_pipeline: Arc<ComputePipeline>,
+    postprocess_pipeline: Arc<ComputePipeline>,
     wdd_needs_rebuild: bool,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     frame_count: u32,
@@ -515,8 +519,41 @@ impl Renderer {
             .unwrap()
         };
 
-        let accumulate_pipeline = {
-            let cs = accumulate_shader::load(device.clone())
+        let outgoing_radiance_pipeline = {
+            let cs = outgoing_radiance_shader::load(device.clone())
+                .unwrap()
+                .entry_point("main")
+                .unwrap();
+
+            let stage = PipelineShaderStageCreateInfo::new(cs);
+
+            let layout = {
+                let mut layout_create_info =
+                    PipelineDescriptorSetLayoutCreateInfo::from_stages(&[stage.clone()]);
+
+                // enable push descriptor for set 0
+                layout_create_info.set_layouts[0].flags |=
+                    DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR;
+
+                PipelineLayout::new(
+                    device.clone(),
+                    layout_create_info
+                        .into_pipeline_layout_create_info(device.clone())
+                        .unwrap(),
+                )
+                .unwrap()
+            };
+
+            ComputePipeline::new(
+                device.clone(),
+                None,
+                ComputePipelineCreateInfo::stage_layout(stage, layout),
+            )
+            .unwrap()
+        };
+
+        let postprocess_pipeline = {
+            let cs = postprocess_shader::load(device.clone())
                 .unwrap()
                 .entry_point("main")
                 .unwrap();
@@ -586,7 +623,8 @@ impl Renderer {
             raygen_pipeline,
             raytrace_pipeline,
             nee_pdf_pipeline,
-            accumulate_pipeline,
+            outgoing_radiance_pipeline,
+            postprocess_pipeline,
             descriptor_set_allocator,
             swapchain_images,
             memory_allocator,
@@ -603,7 +641,7 @@ impl Renderer {
             bounce_bsdf_pdf: vec![],
             bounce_nee_pdf: vec![],
             bounce_debug_info: vec![],
-            accumulate_target: vec![],
+            postprocess_target: vec![],
             restir_initial_samples: Sample::default(),
             restir_temporal_reservoir: Reservoir::default(),
             restir_spatial_reservoir: Reservoir::default(),
@@ -713,7 +751,7 @@ impl Renderer {
             self.scale,
         );
         // the final image
-        self.accumulate_target = window_size_dependent_setup(
+        self.postprocess_target = window_size_dependent_setup(
             self.memory_allocator.clone(),
             &self.swapchain_images,
             true,
@@ -930,6 +968,8 @@ impl Renderer {
                 .unwrap();
         }
 
+        // initialize initial sample
+
         // bind nee pdf pipeline
         // this is done in a separate pass for better memory access patterns
         builder
@@ -1010,11 +1050,11 @@ impl Renderer {
 
         // accumulate samples and bounces and write to swapchain image
         builder
-            .bind_pipeline_compute(self.accumulate_pipeline.clone())
+            .bind_pipeline_compute(self.outgoing_radiance_pipeline.clone())
             .unwrap()
             .push_descriptor_set(
                 PipelineBindPoint::Compute,
-                self.accumulate_pipeline.layout().clone(),
+                self.outgoing_radiance_pipeline.layout().clone(),
                 0,
                 vec![
                     // WriteDescriptorSet::buffer(
@@ -1045,26 +1085,59 @@ impl Renderer {
                         6,
                         self.bounce_nee_pdf[image_index as usize].clone(),
                     ),
-                    // WriteDescriptorSet::buffer(
-                    //     7,
-                    //     self.bounce_debug_info[image_index as usize].clone(),
-                    // ),
                     WriteDescriptorSet::buffer(
-                        8,
-                        self.accumulate_target[image_index as usize].clone(),
+                        7,
+                        self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
                     ),
                 ]
                 .into(),
             )
             .unwrap()
             .push_constants(
-                self.accumulate_pipeline.layout().clone(),
+                self.outgoing_radiance_pipeline.layout().clone(),
                 0,
-                accumulate_shader::PushConstants {
-                    debug_view: rendering_preferences.debug_view,
-                    frame: self.frame_count,
-                    srcscale: self.scale,
+                outgoing_radiance_shader::PushConstants {
                     num_bounces: self.num_bounces,
+                    xsize: rt_extent[0],
+                    ysize: rt_extent[1],
+                },
+            )
+            .unwrap()
+            .dispatch(self.group_count(&rt_extent))
+            .unwrap();
+
+        // accumulate samples and bounces and write to swapchain image
+        builder
+            .bind_pipeline_compute(self.postprocess_pipeline.clone())
+            .unwrap()
+            .push_descriptor_set(
+                PipelineBindPoint::Compute,
+                self.postprocess_pipeline.layout().clone(),
+                0,
+                vec![
+                    WriteDescriptorSet::buffer(
+                        0,
+                        self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
+                    ),
+                    // WriteDescriptorSet::buffer(
+                    //     1,
+                    //     self.bounce_debug_info[image_index as usize].clone(),
+                    // ),
+                    WriteDescriptorSet::buffer(
+                        2,
+                        self.postprocess_target[image_index as usize].clone(),
+                    ),
+                ]
+                .into(),
+            )
+            .unwrap()
+            .push_constants(
+                self.postprocess_pipeline.layout().clone(),
+                0,
+                postprocess_shader::PushConstants {
+                    debug_view: rendering_preferences.debug_view,
+                    srcscale: self.scale,
+                    dstscale: 1,
                     xsize: extent[0],
                     ysize: extent[1],
                 },
@@ -1073,7 +1146,7 @@ impl Renderer {
             .dispatch(self.group_count(&extent))
             .unwrap()
             .copy_buffer_to_image(CopyBufferToImageInfo::buffer_image(
-                self.accumulate_target[image_index as usize].clone(),
+                self.postprocess_target[image_index as usize].clone(),
                 self.swapchain_images[image_index as usize].clone(),
             ))
             .unwrap();
