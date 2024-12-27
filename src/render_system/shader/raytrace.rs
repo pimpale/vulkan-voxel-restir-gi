@@ -95,7 +95,7 @@ layout(set = 1, binding = 11) writeonly restrict buffer OutputsDebugInfo {
 layout(push_constant, scalar) uniform PushConstants {
     uint bounce;
     uint nee_type;
-    uint bounce_seed;
+    uint invocation_seed;
     uint xsize;
     uint ysize;
     uint64_t tl_bvh_addr;
@@ -400,7 +400,7 @@ void main() {
             
     const vec3 origin = input_origin[bid];
     const vec3 direction = input_direction[bid];
-    const uint seed = murmur3_combine(bounce_seed, bid);
+    const uint seed = murmur3_combine(invocation_seed, bid);
 
     // return early from terminal samples (ray direction is 0, 0, 0)
     if(length(direction) == 0.0) {

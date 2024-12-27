@@ -84,7 +84,6 @@ layout(set = 0, binding = 7) writeonly restrict buffer OutputsDebugInfo {
 
 layout(push_constant, scalar) uniform PushConstants {
     uint nee_type;
-    uint bounce_seed;
     uint xsize;
     uint ysize;
     uint64_t tl_bvh_addr;

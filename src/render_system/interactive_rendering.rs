@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
+use rand::RngCore;
 use vulkano::{
     Validated, VulkanError,
     acceleration_structure::AccelerationStructure,
@@ -264,11 +265,11 @@ impl Sample {
 struct Reservoir {
     // the current sample in the reservoir
     pub z: Sample,
-    // weight of the current sample
-    pub w: Vec<Subbuffer<[f32]>>, // float
+    // the unbiased contribution weight of the current sample (capital W in the Restir GI paper)
+    pub ucw: Vec<Subbuffer<[f32]>>, // float
     // number of samples seen so far
     pub m: Vec<Subbuffer<[u32]>>, // uint
-    // the sum of the weights of all samples
+    // the sum of the weights of all samples (lowercase w in the Restir GI paper)
     pub w_sum: Vec<Subbuffer<[f32]>>, // float
 }
 
@@ -276,7 +277,7 @@ impl Default for Reservoir {
     fn default() -> Self {
         Reservoir {
             z: Sample::default(),
-            w: vec![],
+            ucw: vec![],
             m: vec![],
             w_sum: vec![],
         }
@@ -291,7 +292,7 @@ impl Reservoir {
     ) -> Self {
         Reservoir {
             z: Sample::window_size_dependent_setup(memory_allocator.clone(), images, scale),
-            w: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
+            ucw: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
             m: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
             w_sum: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
         }
@@ -301,7 +302,7 @@ impl Reservoir {
         let mut writes = self.z.descriptor_writes(image_index, start_index);
         let start_index = (start_index + writes.len()) as u32;
         writes.extend([
-            WriteDescriptorSet::buffer(start_index + 0, self.w[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 0, self.ucw[image_index].clone()),
             WriteDescriptorSet::buffer(start_index + 1, self.m[image_index].clone()),
             WriteDescriptorSet::buffer(start_index + 2, self.w_sum[image_index].clone()),
         ]);
@@ -353,6 +354,7 @@ pub struct Renderer {
     wdd_needs_rebuild: bool,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     frame_count: u32,
+    rng: rand::prelude::ThreadRng,
 }
 
 fn load_textures(
@@ -743,6 +745,7 @@ impl Renderer {
             restir_initial_samples: Sample::default(),
             restir_temporal_reservoir: Reservoir::default(),
             restir_spatial_reservoir: Reservoir::default(),
+            rng: rand::thread_rng()
         };
 
         // create buffers
@@ -962,7 +965,7 @@ impl Renderer {
                         up,
                         screen_size: rt_extent.into(),
                     },
-                    frame_seed: self.frame_count,
+                    invocation_seed: self.rng.next_u32(),
                 },
             )
             .unwrap()
@@ -1063,7 +1066,7 @@ impl Renderer {
                         bounce: bounce,
                         xsize: rt_extent[0],
                         ysize: rt_extent[1],
-                        bounce_seed: self.frame_count * self.num_bounces + bounce,
+                        invocation_seed: self.frame_count * self.num_bounces + bounce,
                         tl_bvh_addr: luminance_bvh.device_address().unwrap().get(),
                     },
                 )
@@ -1131,7 +1134,6 @@ impl Renderer {
                         nee_type: rendering_preferences.nee_type,
                         xsize: rt_extent[0],
                         ysize: rt_extent[1],
-                        bounce_seed: self.frame_count * self.num_bounces + bounce,
                         tl_bvh_addr: luminance_bvh.device_address().unwrap().get(),
                     },
                 )
@@ -1273,6 +1275,7 @@ impl Renderer {
                 0,
                 restir_temporal_resampling::PushConstants {
                     always_zero: 0,
+                    invocation_seed: self.rng.next_u32(),
                     xsize: rt_extent[0],
                     ysize: rt_extent[1],
                 },
@@ -1308,6 +1311,7 @@ impl Renderer {
                 0,
                 restir_spatial_resampling::PushConstants {
                     always_zero: 0,
+                    invocation_seed: self.rng.next_u32(),
                     xsize: rt_extent[0],
                     ysize: rt_extent[1],
                 },

@@ -83,8 +83,8 @@ layout(set = 0, binding = 11, scalar) restrict buffer TemporalReservoirZSeed {
     uint tr_z_seed[];
 };
 
-layout(set = 0, binding = 12, scalar) restrict buffer TemporalReservoirW {
-    float tr_w[];
+layout(set = 0, binding = 12, scalar) restrict buffer TemporalReservoirUCW {
+    float tr_ucw[];
 };
 
 layout(set = 0, binding = 13, scalar) restrict buffer TemporalReservoirM {
@@ -98,9 +98,57 @@ layout(set = 0, binding = 14, scalar) restrict buffer TemporalReservoirWSum {
 layout(push_constant, scalar) uniform PushConstants {
     // always zero is kept at zero, but prevents the compiler from optimizing out the buffer
     uint always_zero;
+    // the seed for this invocation of the shader
+    uint invocation_seed;
     uint xsize;
     uint ysize;
 };
+
+// source: https://stackoverflow.com/questions/4200224/random-noise-functions-for-glsl
+// Construct a float with half-open range [0:1] using low 23 bits.
+// All zeroes yields 0.0, all ones yields the next smallest representable value below 1.0.
+float floatConstruct( uint m ) {
+    const uint ieeeMantissa = 0x007FFFFFu; // binary32 mantissa bitmask
+    const uint ieeeOne      = 0x3F800000u; // 1.0 in IEEE binary32
+
+    m &= ieeeMantissa;                     // Keep only mantissa bits (fractional part)
+    m |= ieeeOne;                          // Add fractional part to 1.0
+
+    float  f = uintBitsToFloat( m );       // Range [1:2]
+    return f - 1.0;                        // Range [0:1]
+}
+
+// accepts a seed, h, and a 32 bit integer, k, and returns a 32 bit integer
+// corresponds to the loop in the murmur3 hash algorithm
+// the output should be passed to murmur3_finalize before being used
+uint murmur3_combine(uint h, uint k) {
+    // murmur3_32_scrambleBlBvhNodeBuffer
+    k *= 0x1b873593;
+
+    h ^= k;
+    h = (h << 13) | (h >> 19);
+    h = h * 5 + 0xe6546b64;
+    return h;
+}
+
+// accepts a seed, h and returns a random 32 bit integer
+// corresponds to the last part of the murmur3 hash algorithm
+uint murmur3_finalize(uint h) {
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
+    return h;
+}
+
+uint murmur3_combinef(uint h, float k) {
+    return murmur3_combine(h, floatBitsToUint(k));
+}
+
+float murmur3_finalizef(uint h) {
+    return floatConstruct(murmur3_finalize(h));
+}
 
 float dummyUse() {
     if(always_zero == 0) {
@@ -118,60 +166,68 @@ float dummyUse() {
          + tr_z_n_s[0].x 
          + tr_z_l_o_hat[0].x 
          + float(tr_z_seed[0]) 
-         + tr_w[0] 
+         + tr_ucw[0] 
          + tr_m[0] 
          + tr_w_sum[0];
 
 }
 
 
-void main() {
-    dummyUse();
+void zeroReservoir(uint id) {
+    tr_w_sum[id] = 0.0;
+    tr_m[id] = 0;
 }
 
-// void main() {
-//     if(gl_GlobalInvocationID.x >= xsize || gl_GlobalInvocationID.y >= ysize) {
-//         return;
-//     }
-//     const uint srcxsize = xsize * srcscale;
-//     const uint srcysize = ysize * srcscale;
+void updateReservoir(
+    // id
+    uint id,
+    uint r,
+    // sample
+    vec3 x_v,
+    vec3 n_v,
+    vec3 x_s,
+    vec3 n_s,
+    vec3 l_o_hat,
+    uint seed,
+    // weight of sample
+    float w
+) {
+    tr_w_sum[id] += w;
+    tr_m[id] += 1;
+    if(floatConstruct(r) < w / tr_w_sum[id]) {
+        tr_z_x_v[id] = x_v;
+        tr_z_n_v[id] = n_v;
+        tr_z_x_s[id] = x_s;
+        tr_z_n_s[id] = n_s;
+        tr_z_l_o_hat[id] = l_o_hat;
+        tr_z_seed[id] = seed;
+    }
+}
 
-//     vec3 color = vec3(0.0);
-//     vec3 debug_info = vec3(0.0);
-//     for (uint scaley = 0; scaley < srcscale; scaley++) {
-//         const uint srcy = gl_GlobalInvocationID.y * srcscale + scaley;
-//         for(uint scalex = 0; scalex < srcscale; scalex++) {
-//             const uint srcx = gl_GlobalInvocationID.x * srcscale + scalex;
-            
-//             // compute id of the source pixel
-//             const uint id = srcy * srcxsize + srcx;
+void main() {
+    dummyUse();
 
-//             // fetch the color for this sample
-//             color += input_outgoing_radiance[id];
-//             // fetch the debug info for this sample
-//             debug_info += input_debug_info[id].xyz;
-//         }
-//     }
+    if(gl_GlobalInvocationID.x >= xsize || gl_GlobalInvocationID.y >= ysize) {
+        return;
+    }
 
-//     vec3 pixel_color;
-//     if (debug_view == 0) {
-//         pixel_color = color;
-//     } else {
-//         pixel_color = debug_info;
-//     }
+    uint id = gl_GlobalInvocationID.y * xsize + gl_GlobalInvocationID.x;
+    
+    // for now, we're not doing any temporal resampling
 
-//     // average the samples
-//     pixel_color = pixel_color / float(srcscale*srcscale);
-//     u8vec4 pixel_data = u8vec4(pixel_color.zyx*255, 255);
-
-//     // write to a patch of size dstscale*dstscale
-//     for (uint scaley = 0; scaley < dstscale; scaley++) {
-//         const uint dsty = gl_GlobalInvocationID.y * dstscale + scaley;
-//         for(uint scalex = 0; scalex < dstscale; scalex++) {
-//             const uint dstx = gl_GlobalInvocationID.x * dstscale + scalex;
-//             output_image[dsty*xsize*dstscale + dstx] = u8vec4(pixel_color.zyx*255, 255);
-//         }
-//     }
-// }
-",
+    zeroReservoir(id);
+    
+    updateReservoir(
+        id,
+        invocation_seed,
+        is_x_v[id],
+        is_n_v[id],
+        is_x_s[id],
+        is_n_s[id],
+        is_l_o_hat[id],
+        is_seed[id],
+        1.0
+    );
+}
+"
 }
