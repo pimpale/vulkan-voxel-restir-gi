@@ -217,6 +217,8 @@ struct Sample {
     pub n_s: Vec<Subbuffer<[f32]>>, // vec3
     // outgoing radiance at sample point
     pub l_o_hat: Vec<Subbuffer<[f32]>>, // vec3
+    // the PDF of the sampling distribution at the visible point
+    pub p_omega: Vec<Subbuffer<[f32]>>, // float
     // random seed used for sample
     pub seed: Vec<Subbuffer<[u32]>>, // uint
 }
@@ -229,6 +231,7 @@ impl Default for Sample {
             x_s: vec![],
             n_s: vec![],
             l_o_hat: vec![],
+            p_omega: vec![],
             seed: vec![],
         }
     }
@@ -245,6 +248,7 @@ impl Sample {
             x_s: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
             n_s: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
             l_o_hat: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 3),
+            p_omega: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
             seed: window_size_dependent_setup(memory_allocator.clone(), images, true, scale, 1),
         }
     }
@@ -257,7 +261,8 @@ impl Sample {
             WriteDescriptorSet::buffer(start_index + 2, self.x_s[image_index].clone()),
             WriteDescriptorSet::buffer(start_index + 3, self.n_s[image_index].clone()),
             WriteDescriptorSet::buffer(start_index + 4, self.l_o_hat[image_index].clone()),
-            WriteDescriptorSet::buffer(start_index + 5, self.seed[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 5, self.p_omega[image_index].clone()),
+            WriteDescriptorSet::buffer(start_index + 6, self.seed[image_index].clone()),
         ]
     }
 }
@@ -335,6 +340,8 @@ pub struct Renderer {
     bounce_nee_pdf: Vec<Subbuffer<[f32]>>,
     // the outgoing radiance at each bounce point
     bounce_outgoing_radiance: Vec<Subbuffer<[f32]>>,
+    // the sampling pdf of the next direction
+    bounce_omega_sampling_pdf: Vec<Subbuffer<[f32]>>,
     debug_info: Vec<Subbuffer<[f32]>>,
     // Initial sample buffer
     restir_initial_samples: Sample,
@@ -740,12 +747,13 @@ impl Renderer {
             bounce_bsdf_pdf: vec![],
             bounce_nee_pdf: vec![],
             bounce_outgoing_radiance: vec![],
+            bounce_omega_sampling_pdf: vec![],
             debug_info: vec![],
             postprocess_target: vec![],
             restir_initial_samples: Sample::default(),
             restir_temporal_reservoir: Reservoir::default(),
             restir_spatial_reservoir: Reservoir::default(),
-            rng: rand::thread_rng()
+            rng: rand::thread_rng(),
         };
 
         // create buffers
@@ -835,6 +843,13 @@ impl Renderer {
             true,
             self.scale,
             3 * self.num_bounces,
+        );
+        self.bounce_omega_sampling_pdf = window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            true,
+            self.scale,
+            1 * self.num_bounces,
         );
         self.restir_initial_samples = Sample::window_size_dependent_setup(
             self.memory_allocator.clone(),
@@ -1183,6 +1198,10 @@ impl Renderer {
                         7,
                         self.bounce_outgoing_radiance[image_index as usize].clone(),
                     ),
+                    WriteDescriptorSet::buffer(
+                        8,
+                        self.bounce_omega_sampling_pdf[image_index as usize].clone(),
+                    ),
                 ]
                 .into(),
             )
@@ -1246,7 +1265,15 @@ impl Renderer {
                     .slice(1 * sect_sz * 3..2 * sect_sz * 3),
                 self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
             ))
-            .unwrap();
+            .unwrap()
+            // Step 6: write the sampling pdf at visibe point to the initial sample buffer p_omega
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.bounce_bsdf_pdf[image_index as usize]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz..2 * sect_sz),
+                self.restir_initial_samples.p_omega[image_index as usize].clone(),
+            ));
 
         // update temporal reservoir
         builder

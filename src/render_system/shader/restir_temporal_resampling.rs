@@ -10,18 +10,17 @@ vulkano_shaders::shader! {
 
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
-// struct Sample {
-//     // visible point and surface normal
-//     pub x_v: Vec<Subbuffer<[f32]>>, // vec3
-//     pub n_v: Vec<Subbuffer<[f32]>>, // vec3
-//     // sample point and surface normal
-//     pub x_s: Vec<Subbuffer<[f32]>>, // vec3
-//     pub n_s: Vec<Subbuffer<[f32]>>, // vec3
-//     // outgoing radiance at sample point
-//     pub l_o_hat: Vec<Subbuffer<[f32]>>, // vec3
-//     // random seed used for sample
-//     pub seed: Vec<Subbuffer<[u32]>>, // uint
-// }
+
+struct Sample {
+    vec3 x_v;
+    vec3 n_v;
+    vec3 x_s;
+    vec3 n_s;
+    vec3 l_o_hat;
+    float p_omega;
+    uint seed;
+};
+
 
 layout(set = 0, binding = 0, scalar) readonly restrict buffer InputInitialSampleXV {
     vec3 is_x_v[];
@@ -43,55 +42,69 @@ layout(set = 0, binding = 4, scalar) readonly restrict buffer InputInitialSample
     vec3 is_l_o_hat[];
 };
 
-layout(set = 0, binding = 5, scalar) readonly restrict buffer InputInitialSampleSeed {
-    uint is_seed[];
+layout(set = 0, binding = 5, scalar) readonly restrict buffer InputInitialSamplePOmega {
+    float is_p_omega[];
 };
 
+layout(set = 0, binding = 6, scalar) readonly restrict buffer InputInitialSampleSeed {
+    uint is_seed[];
+};
 
 // struct Reservoir {
 //     // the current sample in the reservoir
 //     pub z: Sample,
 //     // weight of the current sample
-//     pub w: Vec<Subbuffer<[f32]>>, // float
+//     pub ucw: Vec<Subbuffer<[f32]>>, // float
 //     // number of samples seen so far
 //     pub m: Vec<Subbuffer<[u32]>>, // uint
 //     // the sum of the weights of all samples
 //     pub w_sum: Vec<Subbuffer<[f32]>>, // float
 // }
 
-layout(set = 0, binding = 6, scalar) restrict buffer TemporalReservoirZXV {
+struct Reservoir {
+    Sample z;
+    float ucw;
+    uint m;
+    float w_sum;
+};
+
+layout(set = 0, binding = 7, scalar) restrict buffer TemporalReservoirZXV {
     vec3 tr_z_x_v[];
 };
 
-layout(set = 0, binding = 7, scalar) restrict buffer TemporalReservoirZNV {
+layout(set = 0, binding = 8, scalar) restrict buffer TemporalReservoirZNV {
     vec3 tr_z_n_v[];
 };
 
-layout(set = 0, binding = 8, scalar) restrict buffer TemporalReservoirZXS {
+layout(set = 0, binding = 9, scalar) restrict buffer TemporalReservoirZXS {
     vec3 tr_z_x_s[];
 };
 
-layout(set = 0, binding = 9, scalar) restrict buffer TemporalReservoirZNS {
+layout(set = 0, binding = 10, scalar) restrict buffer TemporalReservoirZNS {
     vec3 tr_z_n_s[];
 };
 
-layout(set = 0, binding = 10, scalar) restrict buffer TemporalReservoirZLOHat {
+layout(set = 0, binding = 11, scalar) restrict buffer TemporalReservoirZLOHat {
     vec3 tr_z_l_o_hat[];
 };
 
-layout(set = 0, binding = 11, scalar) restrict buffer TemporalReservoirZSeed {
+layout(set = 0, binding = 12, scalar) restrict buffer TemporalReservoirZPOmega {
+    float tr_z_p_omega[];
+};
+
+layout(set = 0, binding = 13, scalar) restrict buffer TemporalReservoirZSeed {
     uint tr_z_seed[];
 };
 
-layout(set = 0, binding = 12, scalar) restrict buffer TemporalReservoirUCW {
+layout(set = 0, binding = 14, scalar) restrict buffer TemporalReservoirUCW {
     float tr_ucw[];
 };
 
-layout(set = 0, binding = 13, scalar) restrict buffer TemporalReservoirM {
+layout(set = 0, binding = 15, scalar) restrict buffer TemporalReservoirM {
     uint tr_m[];
 };
 
-layout(set = 0, binding = 14, scalar) restrict buffer TemporalReservoirWSum {
+layout(set = 0, binding = 16, scalar) restrict buffer TemporalReservoirWSum {
     float tr_w_sum[];
 };
 
@@ -159,6 +172,7 @@ float dummyUse() {
          + is_x_s[0].x
          + is_n_s[0].x
          + is_l_o_hat[0].x
+         + is_p_omega[0]
          + float(is_seed[0])
          + tr_z_x_v[0].x
          + tr_z_n_v[0].x 
@@ -169,65 +183,106 @@ float dummyUse() {
          + tr_ucw[0] 
          + tr_m[0] 
          + tr_w_sum[0];
-
 }
 
+Sample loadInitialSample(uint id) {
+    return Sample(
+        is_x_v[id],
+        is_n_v[id],
+        is_x_s[id],
+        is_n_s[id],
+        is_l_o_hat[id],
+        is_p_omega[id],
+        is_seed[id]
+    );
+}
 
-void zeroReservoir(uint id) {
-    tr_w_sum[id] = 0.0;
-    tr_m[id] = 0;
+Reservoir loadTemporalReservoir(uint id) {
+    return Reservoir(
+        Sample(
+            tr_z_x_v[id],
+            tr_z_n_v[id],
+            tr_z_x_s[id],
+            tr_z_n_s[id],
+            tr_z_l_o_hat[id],
+            tr_z_p_omega[id],
+            tr_z_seed[id]
+        ),
+        tr_ucw[id],
+        tr_m[id],
+        tr_w_sum[id]
+    );
+}
+
+void storeTemporalReservoir(uint id, Reservoir r) {
+    tr_z_x_v[id] = r.z.x_v;
+    tr_z_n_v[id] = r.z.n_v;
+    tr_z_x_s[id] = r.z.x_s;
+    tr_z_n_s[id] = r.z.n_s;
+    tr_z_l_o_hat[id] = r.z.l_o_hat;
+    tr_z_p_omega[id] = r.z.p_omega;
+    tr_z_seed[id] = r.z.seed;
+    tr_ucw[id] = r.ucw;
+    tr_m[id] = r.m;
+    tr_w_sum[id] = r.w_sum;
 }
 
 void updateReservoir(
-    // id
-    uint id,
-    uint r,
-    // sample
-    vec3 x_v,
-    vec3 n_v,
-    vec3 x_s,
-    vec3 n_s,
-    vec3 l_o_hat,
     uint seed,
-    // weight of sample
-    float w
+    inout Reservoir r,
+    Sample z,
+    float w_new
 ) {
-    tr_w_sum[id] += w;
-    tr_m[id] += 1;
-    if(floatConstruct(r) < w / tr_w_sum[id]) {
-        tr_z_x_v[id] = x_v;
-        tr_z_n_v[id] = n_v;
-        tr_z_x_s[id] = x_s;
-        tr_z_n_s[id] = n_s;
-        tr_z_l_o_hat[id] = l_o_hat;
-        tr_z_seed[id] = seed;
+    r.w_sum += w_new;
+    r.m += 1;
+    if(floatConstruct(seed) < w_new / r.w_sum) {
+        r.z = z;
     }
+}
+
+float luminance(vec3 v) {
+    return 0.2126 * v.r + 0.7152 * v.g + 0.0722 * v.b;
 }
 
 void main() {
     dummyUse();
-
     if(gl_GlobalInvocationID.x >= xsize || gl_GlobalInvocationID.y >= ysize) {
         return;
     }
 
     uint id = gl_GlobalInvocationID.y * xsize + gl_GlobalInvocationID.x;
     
-    // for now, we're not doing any temporal resampling
-
-    zeroReservoir(id);
+    Sample S = loadInitialSample(id);
+    Reservoir R = loadTemporalReservoir(id);
+    // for now, we're not doing any temporal resampling, so we re-initialize the reservoir
+    R.w_sum = 0.0;
+    R.m = 0;
     
+    // compute the RIS weight to insert S with
+    // this is defined as p_hat_q(S) / p_q(S)
+    // * p_hat_q(S) is the target function, and is set to L_o(x_s, -\omega_i). 
+    //   e.g, the outgoing radiance at the sample point
+    //   This is given in the sample as l_o_hat
+    // * p_q(S) is the actual sampling PDF at the visible point 
+    //   This is given in the sample as p_omega 
+    
+    const float p_hat_q = luminance(S.l_o_hat);
+    const float p_q = S.p_omega;
+    const float w = p_hat_q / p_q;
+
+    // update the reservoir
     updateReservoir(
-        id,
         invocation_seed,
-        is_x_v[id],
-        is_n_v[id],
-        is_x_s[id],
-        is_n_s[id],
-        is_l_o_hat[id],
-        is_seed[id],
-        1.0
+        R,
+        S,
+        w
     );
+
+    // now compute the unbiased contribution weight for the sample
+    float p_hat_R_z = luminance(R.z.l_o_hat);
+    R.ucw = R.w_sum / (R.m * p_hat_R_z);
+
+    storeTemporalReservoir(id, R);
 }
 "
 }

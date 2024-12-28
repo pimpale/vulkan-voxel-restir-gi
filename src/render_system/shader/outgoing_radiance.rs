@@ -42,6 +42,11 @@ layout(set = 0, binding = 7, scalar) writeonly restrict buffer OutputOutgoingRad
     vec3 output_outgoing_radiance[];
 };
 
+layout(set = 0, binding = 8, scalar) writeonly restrict buffer OutputOmegaSamplingPdf {
+    float output_omega_sampling_pdf[];
+};
+
+
 layout(push_constant, scalar) uniform PushConstants {
     uint num_bounces;
     uint xsize;
@@ -72,15 +77,16 @@ void main() {
         float nee_mis_weight = input_nee_mis_weight[bid];
         // this is our sampling distribution: 
         // mis_weight proportion of the time, we sample from the light source, and 1-mis_weight proportion of the time, we sample from the BSDF
-        float qx = nee_pdf * nee_mis_weight + (1.0 - nee_mis_weight) * bsdf_pdf;
+        float q_omega = nee_pdf * nee_mis_weight + (1.0 - nee_mis_weight) * bsdf_pdf;
         // this is the distribution we are trying to compute the expectation over
-        float px = bsdf_pdf;
-        float reweighting_factor = px / qx;
+        float p_omega = bsdf_pdf;
+        float reweighting_factor = p_omega / q_omega;
 
         outgoing_radiance = input_emissivity[bid] + input_reflectivity[bid] * outgoing_radiance * reweighting_factor * ray_valid;
         
         // write to global memory
         output_outgoing_radiance[bid] = outgoing_radiance;
+        output_omega_sampling_pdf[bid] = q_omega;
     }
 }
 ",
