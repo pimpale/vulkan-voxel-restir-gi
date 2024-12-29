@@ -420,7 +420,7 @@ void main() {
     if(info.miss) {
         output_origin[bid] = origin;
         output_direction[bid] = vec3(0.0); // no direction (miss)
-        output_emissivity[bid] = vec3(20.0); // sky color
+        output_emissivity[bid] = vec3(50.0); // sky color
         output_reflectivity[bid] = vec3(0.0);
         output_nee_mis_weight[bid] = 0.0;
         output_bsdf_pdf[bid] = 1.0;
