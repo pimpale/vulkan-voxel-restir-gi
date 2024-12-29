@@ -14,11 +14,15 @@ layout(set = 0, binding = 0, scalar) readonly restrict buffer InputOutgoingRadia
     vec3 input_outgoing_radiance[];
 };
 
-layout(set = 0, binding = 1, scalar) readonly restrict buffer InputDebugInfo {
+layout(set = 0, binding = 1, scalar) readonly restrict buffer InputRestirFinalTarget {
+    vec3 input_restir_final_target[];
+};
+
+layout(set = 0, binding = 2, scalar) readonly restrict buffer InputDebugInfo {
     vec4 input_debug_info[];
 };
 
-layout(set = 0, binding = 2) writeonly restrict buffer OutputImage {
+layout(set = 0, binding = 3) writeonly restrict buffer OutputImage {
     u8vec4 output_image[];
 };
 
@@ -39,8 +43,10 @@ void main() {
     const uint srcxsize = xsize * srcscale;
     const uint srcysize = ysize * srcscale;
 
-    vec3 color = vec3(0.0);
+    vec3 outgoing_radiance = vec3(0.0);
     vec3 debug_info = vec3(0.0);
+    vec3 restir_final_target = vec3(0.0);
+
     for (uint scaley = 0; scaley < srcscale; scaley++) {
         const uint srcy = gl_GlobalInvocationID.y * srcscale + scaley;
         for(uint scalex = 0; scalex < srcscale; scalex++) {
@@ -50,15 +56,19 @@ void main() {
             const uint id = srcy * srcxsize + srcx;
 
             // fetch the color for this sample
-            color += input_outgoing_radiance[id];
+            outgoing_radiance += input_outgoing_radiance[id];
             // fetch the debug info for this sample
             debug_info += input_debug_info[id].xyz;
+            // fetch the restir final target for this sample
+            restir_final_target += input_restir_final_target[id];
         }
     }
 
     vec3 pixel_color;
     if (debug_view == 0) {
-        pixel_color = color;
+        pixel_color = outgoing_radiance;
+    } else if(debug_view == 1) {
+        pixel_color = restir_final_target;
     } else {
         pixel_color = debug_info;
     }

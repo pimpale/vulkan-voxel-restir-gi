@@ -287,8 +287,11 @@ void main() {
 
     // now compute the unbiased contribution weight for the sample
     float p_hat_R_z = luminance(R.z.l_o_hat);
-    R.ucw = R.w_sum / (R.m * p_hat_R_z);
-
+    if(p_hat_R_z > 0) {
+       R.ucw = R.w_sum / (R.m * p_hat_R_z);
+    } else {
+        R.ucw = 0.0;
+    }
     storeTemporalReservoir(id, R);
 }
 "

@@ -109,6 +109,7 @@ impl Manager for EgoControlsManager {
             let mut current_prefs = camera.rendering_preferences();
             current_prefs.debug_view = match current_prefs.debug_view {
                 0 => 1,
+                1 => 2,
                 _ => 0,
             };
             dbg!(current_prefs.debug_view);

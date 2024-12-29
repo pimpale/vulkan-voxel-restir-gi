@@ -349,6 +349,8 @@ pub struct Renderer {
     restir_temporal_reservoir: Reservoir,
     // spatial reservoir
     restir_spatial_reservoir: Reservoir,
+    // restir final target
+    restir_final_target: Vec<Subbuffer<[f32]>>,
     postprocess_target: Vec<Subbuffer<[u8]>>,
     swapchain_images: Vec<Arc<Image>>,
     raygen_pipeline: Arc<ComputePipeline>,
@@ -788,6 +790,7 @@ impl Renderer {
             restir_initial_samples: Sample::default(),
             restir_temporal_reservoir: Reservoir::default(),
             restir_spatial_reservoir: Reservoir::default(),
+            restir_final_target: vec![],
             rng: rand::thread_rng(),
         };
 
@@ -900,6 +903,13 @@ impl Renderer {
             self.memory_allocator.clone(),
             &self.swapchain_images,
             self.scale,
+        );
+        self.restir_final_target = window_size_dependent_setup(
+            self.memory_allocator.clone(),
+            &self.swapchain_images,
+            true,
+            self.scale,
+            3,
         );
         // debug info (single image)
         self.debug_info = window_size_dependent_setup(
@@ -1328,12 +1338,10 @@ impl Renderer {
                         self.restir_temporal_reservoir
                             .descriptor_writes(image_index as usize, descriptor_writes.len()),
                     );
-                    descriptor_writes.push(
-                        WriteDescriptorSet::buffer(
-                            descriptor_writes.len() as u32,
-                            self.debug_info[image_index as usize].clone(),
-                        ),
-                    );
+                    descriptor_writes.push(WriteDescriptorSet::buffer(
+                        descriptor_writes.len() as u32,
+                        self.debug_info[image_index as usize].clone(),
+                    ));
                     descriptor_writes.into()
                 },
             )
@@ -1394,68 +1402,68 @@ impl Renderer {
             .dispatch(self.group_count(&rt_extent))
             .unwrap();
 
-        // // compute the outgoing radiance at all bounces
-        // builder
-        //     .bind_pipeline_compute(self.restir_finalize_pipeline.clone())
-        //     .unwrap()
-        //     .push_descriptor_set(
-        //         PipelineBindPoint::Compute,
-        //         self.restir_finalize_pipeline.layout().clone(),
-        //         0,
-        //         vec![
-        //             WriteDescriptorSet::buffer(0, self.ray_origins[image_index as usize].clone()),
-        //             WriteDescriptorSet::buffer(
-        //                 1,
-        //                 self.ray_directions[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 2,
-        //                 self.bounce_emissivity[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 3,
-        //                 self.bounce_reflectivity[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 4,
-        //                 self.bounce_nee_mis_weight[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 5,
-        //                 self.bounce_bsdf_pdf[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 6,
-        //                 self.bounce_nee_pdf[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 7,
-        //                 self.restir_spatial_reservoir.ucw[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 8,
-        //                 self.restir_spatial_reservoir.z.l_o_hat[image_index as usize].clone(),
-        //             ),
-        //             WriteDescriptorSet::buffer(
-        //                 9,
-        //                 self.bounce_outgoing_radiance[image_index as usize].clone(),
-        //             ),
-        //         ]
-        //         .into(),
-        //     )
-        //     .unwrap()
-        //     .push_constants(
-        //         self.restir_finalize_pipeline.layout().clone(),
-        //         0,
-        //         restir_finalize::PushConstants {
-        //             always_zero: 0,
-        //             xsize: rt_extent[0],
-        //             ysize: rt_extent[1],
-        //         },
-        //     )
-        //     .unwrap()
-        //     .dispatch(self.group_count(&rt_extent))
-        //     .unwrap();
+        // compute the outgoing radiance at all bounces
+        builder
+            .bind_pipeline_compute(self.restir_finalize_pipeline.clone())
+            .unwrap()
+            .push_descriptor_set(
+                PipelineBindPoint::Compute,
+                self.restir_finalize_pipeline.layout().clone(),
+                0,
+                vec![
+                    WriteDescriptorSet::buffer(0, self.ray_origins[image_index as usize].clone()),
+                    WriteDescriptorSet::buffer(
+                        1,
+                        self.ray_directions[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        2,
+                        self.bounce_emissivity[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        3,
+                        self.bounce_reflectivity[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        4,
+                        self.bounce_nee_mis_weight[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        5,
+                        self.bounce_bsdf_pdf[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        6,
+                        self.bounce_nee_pdf[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        7,
+                        self.restir_spatial_reservoir.ucw[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        8,
+                        self.restir_spatial_reservoir.z.l_o_hat[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(
+                        9,
+                        self.restir_final_target[image_index as usize].clone(),
+                    ),
+                ]
+                .into(),
+            )
+            .unwrap()
+            .push_constants(
+                self.restir_finalize_pipeline.layout().clone(),
+                0,
+                restir_finalize::PushConstants {
+                    always_zero: 0,
+                    xsize: rt_extent[0],
+                    ysize: rt_extent[1],
+                },
+            )
+            .unwrap()
+            .dispatch(self.group_count(&rt_extent))
+            .unwrap();
 
         // aggregate the samples and write to swapchain image
         builder
@@ -1472,9 +1480,13 @@ impl Renderer {
                             .clone(),
                         range: 0 * sect_sz * 3..1 * sect_sz * 3,
                     }),
-                    WriteDescriptorSet::buffer(1, self.debug_info[image_index as usize].clone()),
                     WriteDescriptorSet::buffer(
-                        2,
+                        1,
+                        self.restir_final_target[image_index as usize].clone(),
+                    ),
+                    WriteDescriptorSet::buffer(2, self.debug_info[image_index as usize].clone()),
+                    WriteDescriptorSet::buffer(
+                        3,
                         self.postprocess_target[image_index as usize].clone(),
                     ),
                 ]

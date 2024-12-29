@@ -274,8 +274,8 @@ void mergeReservoir(
 }
 
 bool geometricallySimilar(Sample a, Sample b) {
-    // verify that the second point is not null
-    if(length(b.n_v) < 0.1) {
+    // verify that both the visible points are non-null
+    if(length(a.n_v) + length(b.n_v) < 0.1) {
         return false;
     }
     // verify that the normals don't differ by more than 25 degrees
@@ -298,8 +298,8 @@ float computeJacobian() {
     return 1.0;
 }
 
-const uint maxIterations = 3;
-const float spatialSearchRadius = 10.0;
+const uint maxIterations = 9;
+const float spatialSearchRadius = 20.0;
 
 void main() {
     dummyUse();
@@ -337,6 +337,8 @@ void main() {
         tr_w_sum[id]
     );
 
+    float old_w_sum = R_s.w_sum;
+
     // now attempt to add more pixels
     for(uint s = 0; s < maxIterations; s++) {
         uint iter_seed = murmur3_combine(pixel_seed, s);
@@ -365,7 +367,7 @@ void main() {
         // compute the target function weight to merge R_n with.
         // this is defined as p_hat_q(R_n.z)/jacobian
         // p_hat_q(R_n.z) is the outgoing radiance at the sample point
-        float p_hat_q_adj = p_hat_q(R_n.z) / jacobian; 
+        float p_hat_q_adj = p_hat_q(R_n.z) / jacobian;
 
         // merge the reservoirs
         mergeReservoir(
@@ -390,8 +392,14 @@ void main() {
     R_s.ucw = R_s.w_sum / (Z * p_hat_q(R_s.z));
     storeSpatialReservoir(id, R_s);
 
-    debug_info[id] = vec4(vec3(float(R_s.ucw)/10), 1.0);
-
+    // debug_info[id] = vec4(
+    //     vec3(old_w_sum, R_s.w_sum, float(isnan(R_s.w_sum))*10)/10,
+    //     1.0
+    // );
+    debug_info[id] = vec4(
+        vec3(R_s.ucw, 0.0, 0.0),
+        1.0
+    );
 }
 ",
 }
