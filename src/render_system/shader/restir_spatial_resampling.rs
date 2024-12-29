@@ -245,8 +245,49 @@ void storeSpatialReservoir(uint id, Reservoir r) {
     sr_w_sum[id] = r.w_sum;
 }
 
-bool similarEnough(uvec2 a, uvec2 b) {
+void updateReservoir(
+    uint seed,
+    inout Reservoir r,
+    Sample z,
+    float w_new
+) {
+    r.w_sum += w_new;
+    r.m += 1;
+    if(floatConstruct(seed) < w_new / r.w_sum) {
+        r.z = z;
+    }
+}
+
+void mergeReservoir(
+    uint seed,
+    inout Reservoir r,
+    Reservoir r_new,
+    float p_hat
+) {
+    uint m0 = r.m;
+    updateReservoir(seed, r, r_new.z, p_hat*r_new.ucw*r_new.m);
+    r.m = m0 + r_new.m;
+}
+
+bool geometricallySimilar(Sample a, Sample b) {
+    // verify that the normals don't differ by more than 25 degrees
+    if(dot(a.n_v, b.n_v) < 0.906) {
+        return false;
+    }
+    // verify that the depths don't differ by more than 0.05
     return true;
+}
+
+float luminance(vec3 v) {
+    return 0.2126 * v.r + 0.7152 * v.g + 0.0722 * v.b;
+}
+
+float p_hat_q(Sample z) {
+    return luminance(z.l_o_hat);
+}
+
+float computeJacobian() {
+    return 1.0;
 }
 
 const uint maxIterations = 3;
@@ -262,6 +303,8 @@ void main() {
     // the current pixel
     uvec2 q = gl_GlobalInvocationID.xy; 
 
+    // spatial reservoir at the current pixel
+    Reservoir R_s = loadSpatialReservoir(q.x + q.y*xsize); 
 
     // set of pixels that we are going to merge
     uint nQ = 0;
@@ -282,16 +325,47 @@ void main() {
         );
 
         uvec2 q_n = uvec2(
-            clamp(int(Q[s].x + jitter.x), 0, int(xsize-1)),
-            clamp(int(Q[s].y + jitter.y), 0, int(ysize-1))
+            clamp(int(q.x + 0.5 + jitter.x), 0, int(xsize-1)),
+            clamp(int(q.y + 0.5 + jitter.y), 0, int(ysize-1))
         );
 
+        // load temporal reservoir at the neighbor pixel
+        Reservoir R_n = loadTemporalReservoir(q_n.x + q_n.y*xsize);
+
         // test geometric similarity
-        if(!similarEnough(q, q_n)) {
+        if(!geometricallySimilar(R_s.z, R_n.z)) {
             continue;
         }
 
+        float jacobian = computeJacobian();
+
+        // compute the target function weight to merge R_n with.
+        // this is defined as p_hat_q(R_n.z)/jacobian
+        // p_hat_q(R_n.z) is the outgoing radiance at the sample point
+        float p_hat_q_adj = p_hat_q(R_n.z) / jacobian; 
+
+        // merge the reservoirs
+        mergeReservoir(
+            murmur3_finalize(murmur3_combine(iter_seed, 2)),
+            R_s,
+            R_n,
+            p_hat_q_adj
+        );
+
+        // insert into the set
+        Q[nQ] = q_n;
+        nQ++;
     }
+
+    uint Z = 0;
+    for(uint i = 0; i < nQ; i++) {
+        uvec2 q_n = Q[i];
+        Reservoir R_n = loadTemporalReservoir(q_n.x + q_n.y*xsize);
+        Z += R_n.m;
+    }
+
+    R_s.ucw = R_s.w_sum / (Z * p_hat_q(R_s.z));
+    storeSpatialReservoir(q.x + q.y*xsize, R_s);
 }
 ",
 }

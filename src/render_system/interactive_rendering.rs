@@ -358,6 +358,7 @@ pub struct Renderer {
     postprocess_pipeline: Arc<ComputePipeline>,
     restir_temporal_resampling_pipeline: Arc<ComputePipeline>,
     restir_spatial_resampling_pipeline: Arc<ComputePipeline>,
+    restir_finalize_pipeline: Arc<ComputePipeline>,
     wdd_needs_rebuild: bool,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     frame_count: u32,
@@ -689,6 +690,40 @@ impl Renderer {
             .unwrap()
         };
 
+        let restir_finalize_pipeline = {
+            let cs = restir_finalize::load(device.clone())
+                .unwrap()
+                .entry_point("main")
+                .unwrap();
+
+            let stage = PipelineShaderStageCreateInfo::new(cs);
+
+            let layout = {
+                let mut layout_create_info =
+                    PipelineDescriptorSetLayoutCreateInfo::from_stages(&[stage.clone()]);
+
+                // enable push descriptor for set 0
+                layout_create_info.set_layouts[0].flags |=
+                    DescriptorSetLayoutCreateFlags::PUSH_DESCRIPTOR;
+
+                PipelineLayout::new(
+                    device.clone(),
+                    layout_create_info
+                        .into_pipeline_layout_create_info(device.clone())
+                        .unwrap(),
+                )
+                .unwrap()
+            };
+
+            ComputePipeline::new(
+                device.clone(),
+                None,
+                ComputePipelineCreateInfo::stage_layout(stage, layout),
+            )
+            .unwrap()
+        };
+
+
         let texture_atlas = load_textures(
             texture_atlas,
             queue.clone(),
@@ -731,6 +766,7 @@ impl Renderer {
             postprocess_pipeline,
             restir_temporal_resampling_pipeline,
             restir_spatial_resampling_pipeline,
+            restir_finalize_pipeline,
             descriptor_set_allocator,
             swapchain_images,
             memory_allocator,
@@ -1232,10 +1268,10 @@ impl Renderer {
             .unwrap()
             // Step 2: copy the first bounce normal to the initial sample buffer n_v
             .copy_buffer(CopyBufferInfo::buffers(
-                self.ray_directions[image_index as usize]
+                self.bounce_normals[image_index as usize]
                     .as_bytes()
                     .clone()
-                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                    .slice(0 * sect_sz * 3..1 * sect_sz * 3),
                 self.restir_initial_samples.n_v[image_index as usize].clone(),
             ))
             .unwrap()
@@ -1250,10 +1286,10 @@ impl Renderer {
             .unwrap()
             // Step 4: copy the second bounce normal to the initial sample buffer n_s
             .copy_buffer(CopyBufferInfo::buffers(
-                self.ray_directions[image_index as usize]
+                self.bounce_normals[image_index as usize]
                     .as_bytes()
                     .clone()
-                    .slice(2 * sect_sz * 3..3 * sect_sz * 3),
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
                 self.restir_initial_samples.n_s[image_index as usize].clone(),
             ))
             .unwrap()
