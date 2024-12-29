@@ -108,6 +108,10 @@ layout(set = 0, binding = 16, scalar) restrict buffer TemporalReservoirWSum {
     float tr_w_sum[];
 };
 
+layout(set = 0, binding = 17, scalar) restrict buffer OutputDebugInfo {
+    vec4 debug_info[];
+};
+
 layout(push_constant, scalar) uniform PushConstants {
     // always zero is kept at zero, but prevents the compiler from optimizing out the buffer
     uint always_zero;
@@ -182,7 +186,8 @@ float dummyUse() {
          + float(tr_z_seed[0]) 
          + tr_ucw[0] 
          + tr_m[0] 
-         + tr_w_sum[0];
+         + tr_w_sum[0]
+         + debug_info[0].x;
 }
 
 Sample loadInitialSample(uint id) {
@@ -252,6 +257,8 @@ void main() {
 
     uint id = gl_GlobalInvocationID.y * xsize + gl_GlobalInvocationID.x;
     
+    uint pixel_seed = murmur3_combine(invocation_seed, id);
+
     Sample S = loadInitialSample(id);
     Reservoir R = loadTemporalReservoir(id);
     // for now, we're not doing any temporal resampling, so we re-initialize the reservoir
@@ -272,7 +279,7 @@ void main() {
 
     // update the reservoir
     updateReservoir(
-        invocation_seed,
+        murmur3_finalize(pixel_seed),
         R,
         S,
         w

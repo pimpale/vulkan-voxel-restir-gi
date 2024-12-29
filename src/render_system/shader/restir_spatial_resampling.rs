@@ -112,6 +112,9 @@ layout(set = 0, binding = 19, scalar) restrict buffer SpatialReservoirWSum {
     float sr_w_sum[];
 };
 
+layout(set = 0, binding = 20, scalar) restrict buffer DebugInfo {
+    vec4 debug_info[];
+};
 
 layout(push_constant, scalar) uniform PushConstants {
     // always zero is kept at zero, but prevents the compiler from optimizing out the buffer
@@ -193,7 +196,8 @@ float dummyUse() {
          + float(sr_z_seed[0]) 
          + sr_ucw[0] 
          + sr_m[0] 
-         + sr_w_sum[0];
+         + sr_w_sum[0]
+         + debug_info[0].x;
 
 }
 
@@ -270,8 +274,12 @@ void mergeReservoir(
 }
 
 bool geometricallySimilar(Sample a, Sample b) {
+    // verify that the second point is not null
+    if(length(b.n_v) < 0.1) {
+        return false;
+    }
     // verify that the normals don't differ by more than 25 degrees
-    if(dot(a.n_v, b.n_v) < 0.906) {
+    if(dot(a.n_v, b.n_v) < cos(radians(25.0))) {
         return false;
     }
     // verify that the depths don't differ by more than 0.05
@@ -301,10 +309,9 @@ void main() {
     }
 
     // the current pixel
-    uvec2 q = gl_GlobalInvocationID.xy; 
-
-    // spatial reservoir at the current pixel
-    Reservoir R_s = loadSpatialReservoir(q.x + q.y*xsize); 
+    uvec2 q = gl_GlobalInvocationID.xy;
+    uint id = q.x + q.y*xsize;
+    uint pixel_seed = murmur3_combine(invocation_seed, id);
 
     // set of pixels that we are going to merge
     uint nQ = 0;
@@ -313,10 +320,26 @@ void main() {
     // add current pixel to the set
     Q[0] = q;
     nQ++;
+    
+    // spatial reservoir at the current pixel
+    Reservoir R_s = Reservoir(
+        Sample(
+            tr_z_x_v[id],
+            tr_z_n_v[id],
+            tr_z_x_s[id],
+            tr_z_n_s[id],
+            tr_z_l_o_hat[id],
+            tr_z_p_omega[id],
+            tr_z_seed[id]
+        ),
+        tr_ucw[id],
+        tr_m[id],
+        tr_w_sum[id]
+    );
 
     // now attempt to add more pixels
     for(uint s = 0; s < maxIterations; s++) {
-        uint iter_seed = murmur3_combine(invocation_seed, s);
+        uint iter_seed = murmur3_combine(pixel_seed, s);
 
         // choose a random neighbor pixel
         vec2 jitter = spatialSearchRadius*vec2(
@@ -365,7 +388,10 @@ void main() {
     }
 
     R_s.ucw = R_s.w_sum / (Z * p_hat_q(R_s.z));
-    storeSpatialReservoir(q.x + q.y*xsize, R_s);
+    storeSpatialReservoir(id, R_s);
+
+    debug_info[id] = vec4(vec3(float(R_s.ucw)/10), 1.0);
+
 }
 ",
 }

@@ -51,12 +51,29 @@ layout(set = 0, binding = 9, scalar) writeonly restrict buffer OutputOutgoingRad
 };
 
 layout(push_constant, scalar) uniform PushConstants {
-    uint num_bounces;
+    uint always_zero;
     uint xsize;
     uint ysize;
 };
 
+
+float dummyUse(uint always_zero) {
+    if(always_zero == 0) {
+        return 0.0;
+    }
+    return input_origin[0].x
+        + input_direction[0].x
+        + input_emissivity[0].x
+        + input_reflectivity[0].x
+        + input_nee_mis_weight[0]
+        + input_bsdf_pdf[0]
+        + input_nee_pdf[0]
+        + input_ris_weight[0]
+        + input_sample_l_o_hat[0].x;
+}
+
 void main() {
+    dummyUse(always_zero);
     if(gl_GlobalInvocationID.x >= xsize || gl_GlobalInvocationID.y >= ysize) {
         return;
     }
@@ -66,7 +83,7 @@ void main() {
 
     const uint id = y * xsize + x;
 
-    vec3 outgoing_radiance = input_emissivity[id] + input_reflectivity[id] * input_sample_l_o_hat[id] * input_ris_weight[id];
+    vec3 outgoing_radiance = input_emissivity[id] + (float(x)/float(xsize))*input_reflectivity[id] * input_sample_l_o_hat[id] * input_ris_weight[id];
     output_outgoing_radiance[id] = outgoing_radiance;
 }
 
