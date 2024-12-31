@@ -86,41 +86,5 @@ void main() {
     vec3 outgoing_radiance = input_emissivity[id] + input_reflectivity[id] * input_sample_l_o_hat[id] * input_ris_weight[id];
     output_outgoing_radiance[id] = outgoing_radiance;
 }
-
-// void main() {
-//     if(gl_GlobalInvocationID.x >= xsize || gl_GlobalInvocationID.y >= ysize) {
-//         return;
-//     }
-//     const uint x = gl_GlobalInvocationID.x;
-//     const uint y = gl_GlobalInvocationID.y;
-
-//     // compute the color for this sample
-//     vec3 outgoing_radiance = vec3(0.0);
-//     for(int bounce = int(num_bounces)-1; bounce >= 0; bounce--) {            
-//         // tensor layout: [bounce, y, x, channel]
-//         const uint bid = bounce * ysize * xsize 
-//                         + y   * xsize 
-//                         + x;
-
-//         // whether the ray is valid
-//         float ray_valid = input_direction[bid] == vec3(0.0) ? 0.0 : 1.0;
-
-//         // compute importance sampling data
-//         float bsdf_pdf = input_bsdf_pdf[bid];
-//         float nee_pdf = input_nee_pdf[bid];
-//         float nee_mis_weight = input_nee_mis_weight[bid];
-//         // this is our sampling distribution: 
-//         // mis_weight proportion of the time, we sample from the light source, and 1-mis_weight proportion of the time, we sample from the BSDF
-//         float q_omega = nee_pdf * nee_mis_weight + (1.0 - nee_mis_weight) * bsdf_pdf;
-//         // this is the distribution we are trying to compute the expectation over
-//         float p_omega = bsdf_pdf;
-//         float reweighting_factor = p_omega / q_omega;
-
-//         outgoing_radiance = input_emissivity[bid] + input_reflectivity[bid] * outgoing_radiance * reweighting_factor * ray_valid;
-        
-//         // write to global memory
-//         output_outgoing_radiance[bid] = outgoing_radiance;
-//     }
-// }
 ",
 }

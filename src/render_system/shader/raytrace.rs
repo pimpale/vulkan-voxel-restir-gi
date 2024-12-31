@@ -473,7 +473,7 @@ void main() {
 
     vec3 reflectivity = tex0.rgb;
     float alpha = tex0.a;
-    vec3 emissivity = 1000.0*tex1.rgb * -dot(direction, ics.normal);
+    vec3 emissivity = 100.0*tex1.rgb * -dot(direction, ics.normal);
     float metallicity = tex2.r;
 
     // decide whether to do specular (0), transmissive (1), or lambertian (2) scattering
@@ -502,7 +502,7 @@ void main() {
         // try traversing the bvh
         BvhTraverseResult result;
         
-        if(nee_type == 1 || (nee_type == 2 && bounce == 0)) {
+        if(nee_type == 1 || (nee_type == 2 && bounce == 1)) {
             result = traverseBvh(new_origin, ics.normal, murmur3_combine(seed, 2));
         }
         

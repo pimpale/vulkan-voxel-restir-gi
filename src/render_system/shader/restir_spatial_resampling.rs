@@ -294,11 +294,23 @@ float p_hat_q(Sample z) {
     return luminance(z.l_o_hat);
 }
 
-float computeJacobian() {
-    return 1.0;
+// allows us to reuse a sample from pixel q at pixel r
+float computeJacobianQToR(Sample q, Sample r, inout float v1, inout float v2) {
+    // get normal of the second bounce of q
+    vec3 n = q.n_s;
+    vec3 q_v_to_s = q.x_v - q.x_s;
+    vec3 r_v_to_s = r.x_v - q.x_s;
+    if(length(n) < 0.1) {
+        return 1.0;
+    }
+    float cos_phi_q_2 = abs(dot(normalize(q_v_to_s), n));
+    float cos_phi_r_2 = abs(dot(normalize(r_v_to_s), n));
+    v2 = cos_phi_q_2;
+    v1 = cos_phi_r_2;
+    return (cos_phi_r_2 / cos_phi_q_2) * (length(q_v_to_s) / length(r_v_to_s));
 }
 
-const uint maxIterations = 9;
+const uint maxIterations = 10;
 const float spatialSearchRadius = 20.0;
 
 void main() {
@@ -337,7 +349,8 @@ void main() {
         tr_w_sum[id]
     );
 
-    float old_w_sum = R_s.w_sum;
+    float v1 = 0;
+    float v2 = 0;
 
     // now attempt to add more pixels
     for(uint s = 0; s < maxIterations; s++) {
@@ -362,7 +375,9 @@ void main() {
             continue;
         }
 
-        float jacobian = computeJacobian();
+        // reuse sample from R_n at R_s
+        float jacobian = computeJacobianQToR(R_n.z, R_s.z, v1 ,v2);
+        jacobian = clamp(jacobian, 0.5, 1000);
 
         // compute the target function weight to merge R_n with.
         // this is defined as p_hat_q(R_n.z)/jacobian
@@ -386,18 +401,20 @@ void main() {
     for(uint i = 0; i < nQ; i++) {
         uvec2 q_n = Q[i];
         Reservoir R_n = loadTemporalReservoir(q_n.x + q_n.y*xsize);
-        Z += R_n.m;
+        if(p_hat_q(R_n.z) > 0) {
+            Z += R_n.m;
+        }
     }
 
-    R_s.ucw = R_s.w_sum / (Z * p_hat_q(R_s.z));
+    if(p_hat_q(R_s.z) == 0) {
+        R_s.ucw = 0;
+    } else {
+        R_s.ucw = R_s.w_sum / (Z * p_hat_q(R_s.z));
+    }
     storeSpatialReservoir(id, R_s);
 
-    // debug_info[id] = vec4(
-    //     vec3(old_w_sum, R_s.w_sum, float(isnan(R_s.w_sum))*10)/10,
-    //     1.0
-    // );
     debug_info[id] = vec4(
-        vec3(R_s.ucw, 0.0, 0.0),
+        vec3(v1,v2, v1/v2),
         1.0
     );
 }
