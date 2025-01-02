@@ -753,7 +753,7 @@ impl Renderer {
 
         let mut renderer = Renderer {
             scale: 1,
-            num_bounces: 3,
+            num_bounces: 2,
             surface,
             command_buffer_allocator,
             previous_frame_end: Some(sync::now(device.clone()).boxed()),
@@ -1318,7 +1318,8 @@ impl Renderer {
                     .clone()
                     .slice(1 * sect_sz..2 * sect_sz),
                 self.restir_initial_samples.p_omega[image_index as usize].clone(),
-            ));
+            ))
+            .unwrap();
 
         // update temporal reservoir
         builder
@@ -1402,7 +1403,7 @@ impl Renderer {
             .dispatch(self.group_count(&rt_extent))
             .unwrap();
 
-        // compute the outgoing radiance at all bounces
+        // execute the restir finalize pipeline to compute the final radiance at the last bounce
         builder
             .bind_pipeline_compute(self.restir_finalize_pipeline.clone())
             .unwrap()

@@ -83,7 +83,7 @@ void main() {
 
     const uint id = y * xsize + x;
 
-    vec3 outgoing_radiance = input_emissivity[id] + input_reflectivity[id] * input_sample_l_o_hat[id] * input_ris_weight[id];
+    vec3 outgoing_radiance = input_emissivity[id] + input_reflectivity[id] * input_sample_l_o_hat[id] * input_ris_weight[id] * input_bsdf_pdf[id];
     output_outgoing_radiance[id] = outgoing_radiance;
 }
 ",
