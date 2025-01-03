@@ -116,6 +116,18 @@ impl Manager for EgoControlsManager {
             camera.set_rendering_preferences(current_prefs);
         }
 
+        if UserInputState::key_pressed(window_events, winit::event::VirtualKeyCode::I) {
+            let mut current_prefs = camera.rendering_preferences();
+            current_prefs.restir_spatial_iterations = match current_prefs.restir_spatial_iterations {
+                0 => 5,
+                5 => 10,
+                10 => 15,
+                15 => 20,
+                _ => 0,
+            };
+            dbg!(current_prefs.restir_spatial_iterations);
+            camera.set_rendering_preferences(current_prefs);
+        }
 
         let (cam_eye, cam_front, cam_right, cam_up) = camera.eye_front_right_up();
 

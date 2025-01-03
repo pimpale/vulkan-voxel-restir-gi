@@ -109,7 +109,7 @@ layout(set = 0, binding = 16, scalar) restrict buffer TemporalReservoirWSum {
 };
 
 layout(set = 0, binding = 17, scalar) restrict buffer OutputDebugInfo {
-    vec4 debug_info[];
+    vec3 debug_info[];
 };
 
 layout(push_constant, scalar) uniform PushConstants {
@@ -249,6 +249,10 @@ float luminance(vec3 v) {
     return 0.2126 * v.r + 0.7152 * v.g + 0.0722 * v.b;
 }
 
+float p_hat_q(Sample S) {
+    return luminance(S.l_o_hat);
+}
+
 void main() {
     dummyUse();
     if(gl_GlobalInvocationID.x >= xsize || gl_GlobalInvocationID.y >= ysize) {
@@ -262,8 +266,10 @@ void main() {
     Sample S = loadInitialSample(id);
     Reservoir R = loadTemporalReservoir(id);
     // for now, we're not doing any temporal resampling, so we re-initialize the reservoir
-    R.w_sum = 0.0;
-    R.m = 0;
+    if(murmur3_finalizef(murmur3_combine(pixel_seed, 0)) < 0.5) {
+        R.w_sum = 0.0;
+        R.m = 0;
+    }
     
     // compute the RIS weight to insert S with
     // this is defined as p_hat_q(S) / p_q(S)
@@ -273,20 +279,19 @@ void main() {
     // * p_q(S) is the actual sampling PDF at the visible point 
     //   This is given in the sample as p_omega 
     
-    const float p_hat_q = luminance(S.l_o_hat);
     const float p_q = S.p_omega;
-    const float w = p_hat_q / p_q;
+    const float w = p_hat_q(S) / p_q;
 
     // update the reservoir
     updateReservoir(
-        murmur3_finalize(pixel_seed),
+        murmur3_finalize(murmur3_combine(pixel_seed, 1)),
         R,
         S,
         w
     );
 
     // now compute the unbiased contribution weight for the sample
-    float p_hat_R_z = luminance(R.z.l_o_hat);
+    float p_hat_R_z = p_hat_q(R.z);
     if(p_hat_R_z > 0) {
        R.ucw = R.w_sum / (R.m * p_hat_R_z);
     } else {

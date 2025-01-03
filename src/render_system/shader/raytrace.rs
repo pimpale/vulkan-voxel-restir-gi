@@ -88,7 +88,7 @@ layout(set = 1, binding = 10) writeonly restrict buffer OutputsBsdfPdf {
 };
 
 layout(set = 1, binding = 11) writeonly restrict buffer OutputsDebugInfo {
-    vec4 output_debug_info[];
+    vec3 output_debug_info[];
 };
 
 
@@ -411,7 +411,7 @@ void main() {
         output_reflectivity[bid] = vec3(0.0);
         output_nee_mis_weight[bid] = 0.0;
         output_bsdf_pdf[bid] = 1.0;
-        output_debug_info[bid] = vec4(0.0);
+        output_debug_info[bid] = vec3(0.0);
         return;
     }
 
@@ -422,7 +422,7 @@ void main() {
         output_origin[bid] = origin + direction * 5000.0;
         output_direction[bid] = vec3(0.0); // no direction (miss)
         output_normal[bid] = vec3(0.0);
-        output_emissivity[bid] = vec3(50.0); // sky color
+        output_emissivity[bid] = vec3(dot(direction, vec3(0, 1, 0)) > 0.9 ? 50.0 : 0); // sky color
         output_reflectivity[bid] = vec3(0.0);
         output_nee_mis_weight[bid] = 0.0;
         output_bsdf_pdf[bid] = 1.0;
@@ -474,7 +474,7 @@ void main() {
 
     vec3 reflectivity = tex0.rgb;
     float alpha = tex0.a;
-    vec3 emissivity = 100.0*tex1.rgb * -dot(direction, ics.normal);
+    vec3 emissivity = 1000.0*tex1.rgb * -dot(direction, ics.normal);
     float metallicity = tex2.r;
 
     // decide whether to do specular (0), transmissive (1), or lambertian (2) scattering

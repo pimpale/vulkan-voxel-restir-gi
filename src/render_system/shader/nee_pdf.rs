@@ -79,7 +79,7 @@ layout(set = 0, binding = 6) writeonly restrict buffer OutputsNeePdf {
 };
 
 layout(set = 0, binding = 7) writeonly restrict buffer OutputsDebugInfo {
-    vec4 output_debug_info[];
+    vec3 output_debug_info[];
 };
 
 layout(push_constant, scalar) uniform PushConstants {

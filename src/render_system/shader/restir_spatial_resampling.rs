@@ -113,12 +113,13 @@ layout(set = 0, binding = 19, scalar) restrict buffer SpatialReservoirWSum {
 };
 
 layout(set = 0, binding = 20, scalar) restrict buffer DebugInfo {
-    vec4 debug_info[];
+    vec3 debug_info[];
 };
 
 layout(push_constant, scalar) uniform PushConstants {
     // always zero is kept at zero, but prevents the compiler from optimizing out the buffer
     uint always_zero;
+    uint num_iterations;
     // the seed for this invocation of the shader
     uint invocation_seed;
     uint xsize;
@@ -309,8 +310,8 @@ float computeJacobianQToR(Sample q, Sample r) {
     return (cos_phi_r_2 / cos_phi_q_2) * (length(q_v_to_s) / length(r_v_to_s));
 }
 
-const uint maxIterations = 10;
-const float spatialSearchRadius = 14;
+const uint maxIterations = 20;
+const float spatialSearchRadius = 15;
 
 void main() {
     dummyUse();
@@ -328,19 +329,20 @@ void main() {
     uint nQ = 0;
     uvec2 Q[maxIterations+1];
     Reservoir Q_reservoirs[maxIterations+1];
-
-    // add current pixel to the set
-    Q[0] = q;
-    nQ++;
     
     // spatial reservoir at the current pixel
     Reservoir R_s = loadTemporalReservoir(id);
     Sample S = R_s.z;
 
+    // add current pixel to the set
+    Q[0] = q;
+    Q_reservoirs[0] = R_s;
+    nQ++;
+
     float v_jacobian = 0;
 
     // now attempt to add more pixels
-    for(uint s = 0; s < maxIterations; s++) {
+    for(uint s = 0; s < num_iterations; s++) {
         uint iter_seed = murmur3_combine(pixel_seed, s);
 
         // choose a random neighbor pixel
@@ -364,6 +366,7 @@ void main() {
 
         // reuse sample from R_n at R_s
         float jacobian = computeJacobianQToR(R_n.z, S);
+        jacobian = clamp(jacobian, 0.1, 10);
         v_jacobian += jacobian;
 
         // compute the target function weight to merge R_n with.
@@ -400,11 +403,6 @@ void main() {
         R_s.ucw = R_s.w_sum / (Z * p_hat_q(R_s.z));
     }
     storeSpatialReservoir(id, R_s);
-
-    debug_info[id] = vec4(
-        vec3(0.5*v_jacobian/(nQ-1), 0.0, 0.0), 
-        1.0
-    );
 }
 ",
 }

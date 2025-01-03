@@ -19,7 +19,7 @@ layout(set = 0, binding = 1, scalar) readonly restrict buffer InputRestirFinalTa
 };
 
 layout(set = 0, binding = 2, scalar) readonly restrict buffer InputDebugInfo {
-    vec4 input_debug_info[];
+    vec3 input_debug_info[];
 };
 
 layout(set = 0, binding = 3) writeonly restrict buffer OutputImage {

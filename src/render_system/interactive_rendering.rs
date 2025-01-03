@@ -753,7 +753,7 @@ impl Renderer {
 
         let mut renderer = Renderer {
             scale: 1,
-            num_bounces: 2,
+            num_bounces: 3,
             surface,
             command_buffer_allocator,
             previous_frame_end: Some(sync::now(device.clone()).boxed()),
@@ -917,7 +917,7 @@ impl Renderer {
             &self.swapchain_images,
             true,
             self.scale,
-            4,
+            3,
         );
         // the final image
         self.postprocess_target = window_size_dependent_setup(
@@ -1316,7 +1316,7 @@ impl Renderer {
                 self.bounce_omega_sampling_pdf[image_index as usize]
                     .as_bytes()
                     .clone()
-                    .slice(1 * sect_sz..2 * sect_sz),
+                    .slice(0 * sect_sz..1 * sect_sz),
                 self.restir_initial_samples.p_omega[image_index as usize].clone(),
             ))
             .unwrap();
@@ -1379,12 +1379,10 @@ impl Renderer {
                         self.restir_spatial_reservoir
                             .descriptor_writes(image_index as usize, descriptor_writes.len()),
                     );
-                    descriptor_writes.push(
-                        WriteDescriptorSet::buffer(
-                            descriptor_writes.len() as u32,
-                            self.debug_info[image_index as usize].clone(),
-                        ),
-                    );
+                    descriptor_writes.push(WriteDescriptorSet::buffer(
+                        descriptor_writes.len() as u32,
+                        self.debug_info[image_index as usize].clone(),
+                    ));
                     descriptor_writes.into()
                 },
             )
@@ -1394,6 +1392,7 @@ impl Renderer {
                 0,
                 restir_spatial_resampling::PushConstants {
                     always_zero: 0,
+                    num_iterations: rendering_preferences.restir_spatial_iterations,
                     invocation_seed: self.rng.next_u32(),
                     xsize: rt_extent[0],
                     ysize: rt_extent[1],
@@ -1411,46 +1410,53 @@ impl Renderer {
                 PipelineBindPoint::Compute,
                 self.restir_finalize_pipeline.layout().clone(),
                 0,
-                vec![
-                    WriteDescriptorSet::buffer(0, self.ray_origins[image_index as usize].clone()),
-                    WriteDescriptorSet::buffer(
-                        1,
-                        self.ray_directions[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        2,
-                        self.bounce_emissivity[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        3,
-                        self.bounce_reflectivity[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        4,
-                        self.bounce_nee_mis_weight[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        5,
-                        self.bounce_bsdf_pdf[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        6,
-                        self.bounce_nee_pdf[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        7,
-                        self.restir_spatial_reservoir.ucw[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        8,
-                        self.restir_spatial_reservoir.z.l_o_hat[image_index as usize].clone(),
-                    ),
-                    WriteDescriptorSet::buffer(
-                        9,
+                {
+                    let mut descriptor_writes = vec![
+                        WriteDescriptorSet::buffer(
+                            0,
+                            self.ray_origins[image_index as usize].clone(),
+                        ),
+                        WriteDescriptorSet::buffer(
+                            1,
+                            self.ray_directions[image_index as usize].clone(),
+                        ),
+                        WriteDescriptorSet::buffer(
+                            2,
+                            self.bounce_emissivity[image_index as usize].clone(),
+                        ),
+                        WriteDescriptorSet::buffer(
+                            3,
+                            self.bounce_reflectivity[image_index as usize].clone(),
+                        ),
+                        WriteDescriptorSet::buffer(
+                            4,
+                            self.bounce_nee_mis_weight[image_index as usize].clone(),
+                        ),
+                        WriteDescriptorSet::buffer(
+                            5,
+                            self.bounce_bsdf_pdf[image_index as usize].clone(),
+                        ),
+                        WriteDescriptorSet::buffer(
+                            6,
+                            self.bounce_nee_pdf[image_index as usize].clone(),
+                        ),
+                    ];
+                    descriptor_writes.extend(
+                        self.restir_spatial_reservoir
+                            .descriptor_writes(image_index as usize, descriptor_writes.len()),
+                    );
+
+                    descriptor_writes.push(WriteDescriptorSet::buffer(
+                        descriptor_writes.len() as u32,
                         self.restir_final_target[image_index as usize].clone(),
-                    ),
-                ]
-                .into(),
+                    ));
+                    descriptor_writes.push(WriteDescriptorSet::buffer(
+                        descriptor_writes.len() as u32,
+                        self.debug_info[image_index as usize].clone(),
+                    ));
+
+                    descriptor_writes.into()
+                },
             )
             .unwrap()
             .push_constants(
