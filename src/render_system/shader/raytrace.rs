@@ -339,7 +339,7 @@ vec3 alignedUniformSampleHemisphere(vec2 uv, IntersectionCoordinateSystem ics) {
 
 // returns a vector sampled from the hemisphere defined around the coordinate system defined by normal, tangent, and bitangent
 // normal, tangent and bitangent form a right handed coordinate system 
-vec3 alignedCosineWeightedSampleHemisphere(vec2 uv, IntersectionCoordinateSystem ics) {
+vec3 alignedCosineSampleHemisphere(vec2 uv, IntersectionCoordinateSystem ics) {
     vec3 hemsam = cosineWeightedSampleHemisphere(uv);
     return normalize(hemsam.x * ics.tangent + hemsam.y * ics.normal + hemsam.z * ics.bitangent);
 }
@@ -403,9 +403,10 @@ void main() {
     const uint seed = murmur3_combine(invocation_seed, bid);
 
     // return early from terminal samples (ray direction is 0, 0, 0)
-    if(length(direction) == 0.0) {
+    if(direction == vec3(0.0)) {
         output_origin[bid] = origin;
-        output_direction[bid] = direction;
+        output_direction[bid] = vec3(0.0);
+        output_normal[bid] = vec3(0.0);
         output_emissivity[bid] = vec3(0.0);
         output_reflectivity[bid] = vec3(0.0);
         output_nee_mis_weight[bid] = 0.0;
@@ -418,13 +419,13 @@ void main() {
     IntersectionInfo info = getIntersectionInfo(origin, direction);
 
     if(info.miss) {
-        output_origin[bid] = origin;
+        output_origin[bid] = origin + direction * 5000.0;
         output_direction[bid] = vec3(0.0); // no direction (miss)
-        output_emissivity[bid] = vec3(direction.x > 0 ? 50.0 : 0.0); // sky color
+        output_normal[bid] = vec3(0.0);
+        output_emissivity[bid] = vec3(50.0); // sky color
         output_reflectivity[bid] = vec3(0.0);
         output_nee_mis_weight[bid] = 0.0;
         output_bsdf_pdf[bid] = 1.0;
-        output_debug_info[bid] = vec4(0.0);
         return;
     }
 
@@ -573,7 +574,6 @@ void main() {
     output_reflectivity[bid] = reflectivity;
     output_nee_mis_weight[bid] = light_pdf_mis_weight;
     output_bsdf_pdf[bid] = bsdf_pdf;
-    output_debug_info[bid] = vec4(0.0);
 }
 ",
 }

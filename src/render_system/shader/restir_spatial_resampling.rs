@@ -275,7 +275,7 @@ void mergeReservoir(
 
 bool geometricallySimilar(Sample a, Sample b) {
     // verify that both the visible points are non-null
-    if(length(a.n_v) + length(b.n_v) < 0.1) {
+    if(a.n_v == vec3(0) || b.n_v == vec3(0)) {
         return false;
     }
     // verify that the normals don't differ by more than 25 degrees
@@ -295,23 +295,22 @@ float p_hat_q(Sample z) {
 }
 
 // allows us to reuse a sample from pixel q at pixel r
-float computeJacobianQToR(Sample q, Sample r, inout float v1, inout float v2) {
+float computeJacobianQToR(Sample q, Sample r) {
     // get normal of the second bounce of q
     vec3 n = q.n_s;
+    // reject sky hits
+    if(n == vec3(0)) {
+        return 1;
+    }
     vec3 q_v_to_s = q.x_v - q.x_s;
     vec3 r_v_to_s = r.x_v - q.x_s;
-    if(length(n) < 0.1) {
-        return 1.0;
-    }
     float cos_phi_q_2 = abs(dot(normalize(q_v_to_s), n));
     float cos_phi_r_2 = abs(dot(normalize(r_v_to_s), n));
-    v2 = cos_phi_q_2;
-    v1 = cos_phi_r_2;
     return (cos_phi_r_2 / cos_phi_q_2) * (length(q_v_to_s) / length(r_v_to_s));
 }
 
 const uint maxIterations = 10;
-const float spatialSearchRadius = 20.0;
+const float spatialSearchRadius = 14;
 
 void main() {
     dummyUse();
@@ -328,29 +327,17 @@ void main() {
     // set of pixels that we are going to merge
     uint nQ = 0;
     uvec2 Q[maxIterations+1];
+    Reservoir Q_reservoirs[maxIterations+1];
 
     // add current pixel to the set
     Q[0] = q;
     nQ++;
     
     // spatial reservoir at the current pixel
-    Reservoir R_s = Reservoir(
-        Sample(
-            tr_z_x_v[id],
-            tr_z_n_v[id],
-            tr_z_x_s[id],
-            tr_z_n_s[id],
-            tr_z_l_o_hat[id],
-            tr_z_p_omega[id],
-            tr_z_seed[id]
-        ),
-        tr_ucw[id],
-        tr_m[id],
-        tr_w_sum[id]
-    );
+    Reservoir R_s = loadTemporalReservoir(id);
+    Sample S = R_s.z;
 
-    float v1 = 0;
-    float v2 = 0;
+    float v_jacobian = 0;
 
     // now attempt to add more pixels
     for(uint s = 0; s < maxIterations; s++) {
@@ -371,13 +358,13 @@ void main() {
         Reservoir R_n = loadTemporalReservoir(q_n.x + q_n.y*xsize);
 
         // test geometric similarity
-        if(!geometricallySimilar(R_s.z, R_n.z)) {
+        if(!geometricallySimilar(S, R_n.z)) {
             continue;
         }
 
         // reuse sample from R_n at R_s
-        float jacobian = computeJacobianQToR(R_n.z, R_s.z, v1 ,v2);
-        jacobian = clamp(jacobian, 0.5, 1000);
+        float jacobian = computeJacobianQToR(R_n.z, S);
+        v_jacobian += jacobian;
 
         // compute the target function weight to merge R_n with.
         // this is defined as p_hat_q(R_n.z)/jacobian
@@ -394,13 +381,14 @@ void main() {
 
         // insert into the set
         Q[nQ] = q_n;
+        Q_reservoirs[nQ] = R_n;
         nQ++;
     }
 
     uint Z = 0;
     for(uint i = 0; i < nQ; i++) {
         uvec2 q_n = Q[i];
-        Reservoir R_n = loadTemporalReservoir(q_n.x + q_n.y*xsize);
+        Reservoir R_n = Q_reservoirs[i];
         if(p_hat_q(R_n.z) > 0) {
             Z += R_n.m;
         }
@@ -414,7 +402,7 @@ void main() {
     storeSpatialReservoir(id, R_s);
 
     debug_info[id] = vec4(
-        vec3(v1,v2, v1/v2),
+        vec3(0.5*v_jacobian/(nQ-1), 0.0, 0.0), 
         1.0
     );
 }

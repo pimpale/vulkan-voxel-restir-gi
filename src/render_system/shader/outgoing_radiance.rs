@@ -8,6 +8,8 @@ vulkano_shaders::shader! {
 #extension GL_EXT_scalar_block_layout: require
 #extension GL_EXT_shader_explicit_arithmetic_types_int8: require
 
+#define M_PI 3.1415926535897932384626433832795
+
 layout(local_size_x = 32, local_size_y = 32, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, scalar) readonly restrict buffer InputOrigin {
@@ -69,15 +71,16 @@ void main() {
                         + x;
 
         // whether the ray is valid
-        float ray_valid = input_direction[bid] == vec3(0.0) ? 0.0 : 1.0;
+        float ray_valid = float(input_direction[bid] != vec3(0.0));
 
         // compute importance sampling data
         float bsdf_pdf = input_bsdf_pdf[bid];
         float nee_pdf = input_nee_pdf[bid];
         float nee_mis_weight = input_nee_mis_weight[bid];
         // this is our sampling distribution: 
-        // mis_weight proportion of the time, we sample from the light source, and 1-mis_weight proportion of the time, we sample from the BSDF
-        float q_omega = nee_pdf * nee_mis_weight + (1.0 - nee_mis_weight) * bsdf_pdf;
+        // mis_weight proportion of the time, we sample from the light source, and 1-mis_weight proportion of the time, we sample from a uniform distribution
+        float bsdf_sampling_pdf = 1 / (2 * M_PI);
+        float q_omega = nee_pdf * nee_mis_weight + (1.0 - nee_mis_weight) * bsdf_sampling_pdf;
         // this is the distribution we are trying to compute the expectation over
         float p_omega = bsdf_pdf;
         float reweighting_factor = p_omega / q_omega;

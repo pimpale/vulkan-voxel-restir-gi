@@ -1311,9 +1311,9 @@ impl Renderer {
                 self.restir_initial_samples.l_o_hat[image_index as usize].clone(),
             ))
             .unwrap()
-            // Step 6: write the sampling pdf at visibe point to the initial sample buffer p_omega
+            // Step 6: write the sampling pdf at visible point to the initial sample buffer p_omega
             .copy_buffer(CopyBufferInfo::buffers(
-                self.bounce_bsdf_pdf[image_index as usize]
+                self.bounce_omega_sampling_pdf[image_index as usize]
                     .as_bytes()
                     .clone()
                     .slice(1 * sect_sz..2 * sect_sz),
