@@ -266,7 +266,7 @@ void main() {
     Sample S = loadInitialSample(id);
     Reservoir R = loadTemporalReservoir(id);
     // for now, we're not doing any temporal resampling, so we re-initialize the reservoir
-    if(murmur3_finalizef(murmur3_combine(pixel_seed, 0)) < 0.5) {
+    if(murmur3_finalizef(murmur3_combine(pixel_seed, 0)) < 0.4) {
         R.w_sum = 0.0;
         R.m = 0;
     }

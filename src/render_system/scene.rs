@@ -95,7 +95,7 @@ where
         texture_luminances: Vec<f32>,
     ) -> Scene<K> {
         let command_buffer = AutoCommandBufferBuilder::primary(
-            command_buffer_allocator.as_ref(),
+            command_buffer_allocator.clone(),
             general_queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )
@@ -338,7 +338,7 @@ where
                 let blas_command_buffer = std::mem::replace(
                     &mut self.blas_command_buffer,
                     AutoCommandBufferBuilder::primary(
-                        self.command_buffer_allocator.as_ref(),
+                        self.command_buffer_allocator.clone(),
                         self.general_queue.queue_family_index(),
                         CommandBufferUsage::OneTimeSubmit,
                     )
@@ -352,7 +352,7 @@ where
                     .unwrap();
 
                 let mut tlas_command_buffer = AutoCommandBufferBuilder::primary(
-                    self.command_buffer_allocator.as_ref(),
+                    self.command_buffer_allocator.clone(),
                     self.general_queue.queue_family_index(),
                     CommandBufferUsage::OneTimeSubmit,
                 )
@@ -540,7 +540,7 @@ impl SceneUploader {
         .unwrap();
 
         let mut transfer_command_buffer = AutoCommandBufferBuilder::primary(
-            self.command_buffer_allocator.as_ref(),
+            self.command_buffer_allocator.clone(),
             self.transfer_queue.queue_family_index(),
             CommandBufferUsage::OneTimeSubmit,
         )

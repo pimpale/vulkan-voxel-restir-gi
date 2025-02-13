@@ -97,7 +97,7 @@ pub struct GameWorld {
     renderer: interactive_rendering::Renderer,
 
     // manager data
-    events_since_last_step: Vec<winit::event::WindowEvent<'static>>,
+    events_since_last_step: Vec<winit::event::WindowEvent>,
     changes_since_last_step: Vec<WorldChange>,
     managers: Vec<Box<dyn Manager>>,
 }
@@ -318,9 +318,7 @@ impl GameWorld {
     }
 
     pub fn handle_window_event(&mut self, input: winit::event::WindowEvent) {
-        if let Some(event) = input.to_static() {
-            self.events_since_last_step.push(event);
-        }
+            self.events_since_last_step.push(input);
     }
 
     pub fn scene_uploader(&self) -> &SceneUploader {

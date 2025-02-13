@@ -12,6 +12,7 @@ use vulkano::swapchain::Surface;
 use vulkano::instance::{Instance, InstanceCreateFlags, InstanceCreateInfo};
 use vulkano::memory::allocator::StandardMemoryAllocator;
 
+use vulkano::sync::event;
 use vulkano::VulkanLibrary;
 use winit::event_loop::{ControlFlow, EventLoop};
 
@@ -158,8 +159,8 @@ fn build_scene(
 
 fn main() {
     let library = VulkanLibrary::new().unwrap();
-    let event_loop = EventLoop::new();
-    let required_extensions = Surface::required_extensions(&event_loop);
+    let event_loop = EventLoop::new().unwrap();
+    let required_extensions = Surface::required_extensions(&event_loop).unwrap();
 
     let instance = Instance::new(
         library,
@@ -210,17 +211,19 @@ fn main() {
         surface.clone(),
     );
 
-    event_loop.run(move |event, _, control_flow| match event {
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    event_loop.run(move |event, active_event_loop| match event {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             ..
         } => {
-            *control_flow = ControlFlow::Exit;
+            active_event_loop.exit();
         }
         Event::WindowEvent { event, .. } => {
             world.handle_window_event(event);
         }
-        Event::RedrawEventsCleared => {
+        Event::AboutToWait => {
             // print fps
             frame_count += 1;
             let elapsed = start_time.elapsed();
@@ -234,5 +237,5 @@ fn main() {
             world.step();
         }
         _ => (),
-    });
+    }).unwrap();
 }
