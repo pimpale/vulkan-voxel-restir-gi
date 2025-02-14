@@ -155,7 +155,7 @@ fn create_swapchain(
         device.clone(),
         surface.clone(),
         SwapchainCreateInfo {
-            min_image_count: 8,
+            min_image_count: 3,
             image_format: Format::B8G8R8A8_SRGB,
             image_extent: window.inner_size().into(),
             image_usage: ImageUsage::TRANSFER_DST,
@@ -1002,6 +1002,15 @@ impl Renderer {
             self.wdd_needs_rebuild = true;
         }
 
+        dbg!("got here", self.frame_count);
+        dbg!(self.frame_finished_rendering.len());
+        dbg!(image_index);
+        let future = std::mem::replace(
+            &mut self.frame_finished_rendering[image_index as usize],
+            sync::now(self.device.clone()).boxed(),
+        );
+
+
         let mut builder = AutoCommandBufferBuilder::primary(
             self.command_buffer_allocator.clone(),
             self.queue.queue_family_index(),
@@ -1069,7 +1078,8 @@ impl Renderer {
             .unwrap();
 
         // dispatch raytrace pipeline
-        for bounce in 0..self.num_bounces {
+        // for bounce in 0..self.num_bounces {
+        for bounce in 0..0 {
             let b = bounce as u64;
 
             unsafe {
@@ -1202,7 +1212,8 @@ impl Renderer {
             .unwrap();
 
         // dispatch nee pdf pipeline
-        for bounce in 0..(self.num_bounces - 1) {
+        // for bounce in 0..(self.num_bounces - 1) {
+        for bounce in 0..0 {
             let b = bounce as u64;
             unsafe {
                 // compute nee pdf
@@ -1623,10 +1634,7 @@ impl Renderer {
 
         let command_buffer = builder.build().unwrap();
 
-        let future = std::mem::replace(
-            &mut self.frame_finished_rendering[image_index as usize],
-            sync::now(self.device.clone()).boxed(),
-        )
+        let future = future
         .join(build_future)
         .join(acquire_future)
         .then_execute(self.queue.clone(), command_buffer)
