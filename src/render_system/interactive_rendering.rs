@@ -1,36 +1,18 @@
-use std::{f32::MIN, sync::Arc};
+use std::sync::Arc;
 
 use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
 use rand::RngCore;
 use vulkano::{
-    Validated, VulkanError,
-    acceleration_structure::AccelerationStructure,
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
-    command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyBufferToImageInfo,
-        PrimaryCommandBufferAbstract, allocator::StandardCommandBufferAllocator,
-    },
-    descriptor_set::{
-        DescriptorBufferInfo, DescriptorSet, WriteDescriptorSet,
-        allocator::StandardDescriptorSetAllocator,
-        layout::{DescriptorBindingFlags, DescriptorSetLayoutCreateFlags},
-    },
-    device::{
-        Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, DeviceOwned, Queue,
-        QueueCreateInfo, QueueFlags, physical::PhysicalDeviceType,
-    },
-    format::Format,
-    image::{Image, ImageCreateInfo, ImageType, ImageUsage, sampler::Sampler, view::ImageView},
-    instance::Instance,
-    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
-    pipeline::{
-        ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout,
-        PipelineShaderStageCreateInfo, compute::ComputePipelineCreateInfo,
-        layout::PipelineDescriptorSetLayoutCreateInfo,
-    },
-    swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo},
-    sync::{self, GpuFuture, event::Event, semaphore::Semaphore},
+    acceleration_structure::AccelerationStructure, buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{
+        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyBufferToImageInfo, PrimaryCommandBufferAbstract
+    }, descriptor_set::{
+        allocator::StandardDescriptorSetAllocator, layout::{DescriptorBindingFlags, DescriptorSetLayoutCreateFlags}, DescriptorBufferInfo, DescriptorSet, WriteDescriptorSet
+    }, device::{
+        physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, DeviceOwned, Queue, QueueCreateInfo, QueueFlags
+    }, format::Format, image::{sampler::Sampler, view::ImageView, Image, ImageCreateInfo, ImageType, ImageUsage}, instance::Instance, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
+        compute::ComputePipelineCreateInfo, layout::PipelineDescriptorSetLayoutCreateInfo, ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo
+    }, swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, GpuFuture}, Validated, VulkanError
 };
 use winit::window::Window;
 
@@ -955,7 +937,6 @@ impl Renderer {
 
     pub fn render(
         &mut self,
-        build_future: Box<dyn GpuFuture>,
         top_level_acceleration_structure: Arc<AccelerationStructure>,
         light_top_level_acceleration_structure: Arc<AccelerationStructure>,
         instance_data: Subbuffer<[InstanceData]>,
@@ -966,20 +947,6 @@ impl Renderer {
         up: Vector3<f32>,
         rendering_preferences: RenderingPreferences,
     ) {
-
-        let mut this_frame_future = std::mem::replace(
-            &mut self.frame_finished_rendering[self.frame_count % MIN_IMAGE_COUNT],
-            sync::now(self.device.clone()).boxed(),
-        );
-
-        let mut last_frame_future = std::mem::replace(
-            &mut self.frame_finished_rendering[(self.frame_count + MIN_IMAGE_COUNT - 1) % MIN_IMAGE_COUNT],
-            sync::now(self.device.clone()).boxed(),
-        );
-
-        this_frame_future.cleanup_finished();
-        last_frame_future.cleanup_finished();
-
         // Whenever the window resizes we need to recreate everything dependent on the window size.
         // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
         if self.wdd_needs_rebuild {
@@ -1211,99 +1178,99 @@ impl Renderer {
             }
         }
 
-        // // bind nee pdf pipeline
-        // // this is done in a separate pass for better memory access patterns
-        // builder
-        //     .bind_pipeline_compute(self.nee_pdf_pipeline.clone())
-        //     .unwrap();
+        // bind nee pdf pipeline
+        // this is done in a separate pass for better memory access patterns
+        builder
+            .bind_pipeline_compute(self.nee_pdf_pipeline.clone())
+            .unwrap();
 
-        // // dispatch nee pdf pipeline
-        // // for bounce in 0..(self.num_bounces - 1) {
-        // for bounce in 0..0 {
-        //     let b = bounce as u64;
-        //     unsafe {
-        //         // compute nee pdf
-        //         builder
-        //             .push_descriptor_set(
-        //                 PipelineBindPoint::Compute,
-        //                 self.nee_pdf_pipeline.layout().clone(),
-        //                 0,
-        //                 vec![
-        //                     WriteDescriptorSet::acceleration_structure(
-        //                         0,
-        //                         light_top_level_acceleration_structure.clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(1, instance_data.clone()),
-        //                     // input intersection normal
-        //                     WriteDescriptorSet::buffer_with_range(
-        //                         2,
-        //                         DescriptorBufferInfo {
-        //                             buffer: self.bounce_normals[self.frame_count % MIN_IMAGE_COUNT]
-        //                                 .as_bytes()
-        //                                 .clone(),
-        //                             range: (b) * 3 * sect_sz..(b + 1) * 3 * sect_sz,
-        //                         },
-        //                     ),
-        //                     // input intersection location
-        //                     WriteDescriptorSet::buffer_with_range(
-        //                         3,
-        //                         DescriptorBufferInfo {
-        //                             buffer: self.ray_origins[self.frame_count % MIN_IMAGE_COUNT]
-        //                                 .as_bytes()
-        //                                 .clone(),
-        //                             range: (b + 1) * 3 * sect_sz..(b + 2) * 3 * sect_sz,
-        //                         },
-        //                     ),
-        //                     // input intersection outgoing direction
-        //                     WriteDescriptorSet::buffer_with_range(
-        //                         4,
-        //                         DescriptorBufferInfo {
-        //                             buffer: self.ray_directions[self.frame_count % MIN_IMAGE_COUNT]
-        //                                 .as_bytes()
-        //                                 .clone(),
-        //                             range: (b + 1) * 3 * sect_sz..(b + 2) * 3 * sect_sz,
-        //                         },
-        //                     ),
-        //                     // input nee mis weight
-        //                     WriteDescriptorSet::buffer_with_range(
-        //                         5,
-        //                         DescriptorBufferInfo {
-        //                             buffer: self.bounce_nee_mis_weight
-        //                                 [self.frame_count % MIN_IMAGE_COUNT]
-        //                                 .as_bytes()
-        //                                 .clone(),
-        //                             range: b * sect_sz..(b + 1) * sect_sz,
-        //                         },
-        //                     ),
-        //                     // output nee pdf
-        //                     WriteDescriptorSet::buffer_with_range(
-        //                         6,
-        //                         DescriptorBufferInfo {
-        //                             buffer: self.bounce_nee_pdf[self.frame_count % MIN_IMAGE_COUNT]
-        //                                 .as_bytes()
-        //                                 .clone(),
-        //                             range: b * sect_sz..(b + 1) * sect_sz,
-        //                         },
-        //                     ),
-        //                 ]
-        //                 .into(),
-        //             )
-        //             .unwrap()
-        //             .push_constants(
-        //                 self.nee_pdf_pipeline.layout().clone(),
-        //                 0,
-        //                 nee_pdf::PushConstants {
-        //                     nee_type: rendering_preferences.nee_type,
-        //                     xsize: rt_extent[0],
-        //                     ysize: rt_extent[1],
-        //                     tl_bvh_addr: luminance_bvh.device_address().unwrap().get(),
-        //                 },
-        //             )
-        //             .unwrap()
-        //             .dispatch(self.group_count(&rt_extent))
-        //             .unwrap();
-        //     }
-        // }
+        // dispatch nee pdf pipeline
+        // for bounce in 0..(self.num_bounces - 1) {
+        for bounce in 0..0 {
+            let b = bounce as u64;
+            unsafe {
+                // compute nee pdf
+                builder
+                    .push_descriptor_set(
+                        PipelineBindPoint::Compute,
+                        self.nee_pdf_pipeline.layout().clone(),
+                        0,
+                        vec![
+                            WriteDescriptorSet::acceleration_structure(
+                                0,
+                                light_top_level_acceleration_structure.clone(),
+                            ),
+                            WriteDescriptorSet::buffer(1, instance_data.clone()),
+                            // input intersection normal
+                            WriteDescriptorSet::buffer_with_range(
+                                2,
+                                DescriptorBufferInfo {
+                                    buffer: self.bounce_normals[self.frame_count % MIN_IMAGE_COUNT]
+                                        .as_bytes()
+                                        .clone(),
+                                    range: (b) * 3 * sect_sz..(b + 1) * 3 * sect_sz,
+                                },
+                            ),
+                            // input intersection location
+                            WriteDescriptorSet::buffer_with_range(
+                                3,
+                                DescriptorBufferInfo {
+                                    buffer: self.ray_origins[self.frame_count % MIN_IMAGE_COUNT]
+                                        .as_bytes()
+                                        .clone(),
+                                    range: (b + 1) * 3 * sect_sz..(b + 2) * 3 * sect_sz,
+                                },
+                            ),
+                            // input intersection outgoing direction
+                            WriteDescriptorSet::buffer_with_range(
+                                4,
+                                DescriptorBufferInfo {
+                                    buffer: self.ray_directions[self.frame_count % MIN_IMAGE_COUNT]
+                                        .as_bytes()
+                                        .clone(),
+                                    range: (b + 1) * 3 * sect_sz..(b + 2) * 3 * sect_sz,
+                                },
+                            ),
+                            // input nee mis weight
+                            WriteDescriptorSet::buffer_with_range(
+                                5,
+                                DescriptorBufferInfo {
+                                    buffer: self.bounce_nee_mis_weight
+                                        [self.frame_count % MIN_IMAGE_COUNT]
+                                        .as_bytes()
+                                        .clone(),
+                                    range: b * sect_sz..(b + 1) * sect_sz,
+                                },
+                            ),
+                            // output nee pdf
+                            WriteDescriptorSet::buffer_with_range(
+                                6,
+                                DescriptorBufferInfo {
+                                    buffer: self.bounce_nee_pdf[self.frame_count % MIN_IMAGE_COUNT]
+                                        .as_bytes()
+                                        .clone(),
+                                    range: b * sect_sz..(b + 1) * sect_sz,
+                                },
+                            ),
+                        ]
+                        .into(),
+                    )
+                    .unwrap()
+                    .push_constants(
+                        self.nee_pdf_pipeline.layout().clone(),
+                        0,
+                        nee_pdf::PushConstants {
+                            nee_type: rendering_preferences.nee_type,
+                            xsize: rt_extent[0],
+                            ysize: rt_extent[1],
+                            tl_bvh_addr: luminance_bvh.device_address().unwrap().get(),
+                        },
+                    )
+                    .unwrap()
+                    .dispatch(self.group_count(&rt_extent))
+                    .unwrap();
+            }
+        }
 
         // compute the outgoing radiance at all bounces
         unsafe {
@@ -1371,221 +1338,221 @@ impl Renderer {
                 .unwrap();
         }
 
-        // // initialize initial sample
-        // builder
-        //     // Step 1: copy the first bounce ray position to the initial sample buffer x_v
-        //     .copy_buffer(CopyBufferInfo::buffers(
-        //         self.ray_origins[self.frame_count % MIN_IMAGE_COUNT]
-        //             .as_bytes()
-        //             .clone()
-        //             .slice(1 * sect_sz * 3..2 * sect_sz * 3),
-        //         self.restir_initial_samples.x_v[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //     ))
-        //     .unwrap()
-        //     // Step 2: copy the first bounce normal to the initial sample buffer n_v
-        //     .copy_buffer(CopyBufferInfo::buffers(
-        //         self.bounce_normals[self.frame_count % MIN_IMAGE_COUNT]
-        //             .as_bytes()
-        //             .clone()
-        //             .slice(0 * sect_sz * 3..1 * sect_sz * 3),
-        //         self.restir_initial_samples.n_v[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //     ))
-        //     .unwrap()
-        //     // Step 3: copy the second bounce ray position to the initial sample buffer x_s
-        //     .copy_buffer(CopyBufferInfo::buffers(
-        //         self.ray_origins[self.frame_count % MIN_IMAGE_COUNT]
-        //             .as_bytes()
-        //             .clone()
-        //             .slice(2 * sect_sz * 3..3 * sect_sz * 3),
-        //         self.restir_initial_samples.x_s[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //     ))
-        //     .unwrap()
-        //     // Step 4: copy the second bounce normal to the initial sample buffer n_s
-        //     .copy_buffer(CopyBufferInfo::buffers(
-        //         self.bounce_normals[self.frame_count % MIN_IMAGE_COUNT]
-        //             .as_bytes()
-        //             .clone()
-        //             .slice(1 * sect_sz * 3..2 * sect_sz * 3),
-        //         self.restir_initial_samples.n_s[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //     ))
-        //     .unwrap()
-        //     // Step 5: write the outgoing radiance to the initial sample buffer l_o_hat
-        //     .copy_buffer(CopyBufferInfo::buffers(
-        //         self.bounce_outgoing_radiance[self.frame_count % MIN_IMAGE_COUNT]
-        //             .as_bytes()
-        //             .clone()
-        //             .slice(1 * sect_sz * 3..2 * sect_sz * 3),
-        //         self.restir_initial_samples.l_o_hat[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //     ))
-        //     .unwrap()
-        //     // Step 6: write the sampling pdf at visible point to the initial sample buffer p_omega
-        //     .copy_buffer(CopyBufferInfo::buffers(
-        //         self.bounce_omega_sampling_pdf[self.frame_count % MIN_IMAGE_COUNT]
-        //             .as_bytes()
-        //             .clone()
-        //             .slice(0 * sect_sz..1 * sect_sz),
-        //         self.restir_initial_samples.p_omega[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //     ))
-        //     .unwrap();
+        // initialize initial sample
+        builder
+            // Step 1: copy the first bounce ray position to the initial sample buffer x_v
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.ray_origins[self.frame_count % MIN_IMAGE_COUNT]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                self.restir_initial_samples.x_v[self.frame_count % MIN_IMAGE_COUNT].clone(),
+            ))
+            .unwrap()
+            // Step 2: copy the first bounce normal to the initial sample buffer n_v
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.bounce_normals[self.frame_count % MIN_IMAGE_COUNT]
+                    .as_bytes()
+                    .clone()
+                    .slice(0 * sect_sz * 3..1 * sect_sz * 3),
+                self.restir_initial_samples.n_v[self.frame_count % MIN_IMAGE_COUNT].clone(),
+            ))
+            .unwrap()
+            // Step 3: copy the second bounce ray position to the initial sample buffer x_s
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.ray_origins[self.frame_count % MIN_IMAGE_COUNT]
+                    .as_bytes()
+                    .clone()
+                    .slice(2 * sect_sz * 3..3 * sect_sz * 3),
+                self.restir_initial_samples.x_s[self.frame_count % MIN_IMAGE_COUNT].clone(),
+            ))
+            .unwrap()
+            // Step 4: copy the second bounce normal to the initial sample buffer n_s
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.bounce_normals[self.frame_count % MIN_IMAGE_COUNT]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                self.restir_initial_samples.n_s[self.frame_count % MIN_IMAGE_COUNT].clone(),
+            ))
+            .unwrap()
+            // Step 5: write the outgoing radiance to the initial sample buffer l_o_hat
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.bounce_outgoing_radiance[self.frame_count % MIN_IMAGE_COUNT]
+                    .as_bytes()
+                    .clone()
+                    .slice(1 * sect_sz * 3..2 * sect_sz * 3),
+                self.restir_initial_samples.l_o_hat[self.frame_count % MIN_IMAGE_COUNT].clone(),
+            ))
+            .unwrap()
+            // Step 6: write the sampling pdf at visible point to the initial sample buffer p_omega
+            .copy_buffer(CopyBufferInfo::buffers(
+                self.bounce_omega_sampling_pdf[self.frame_count % MIN_IMAGE_COUNT]
+                    .as_bytes()
+                    .clone()
+                    .slice(0 * sect_sz..1 * sect_sz),
+                self.restir_initial_samples.p_omega[self.frame_count % MIN_IMAGE_COUNT].clone(),
+            ))
+            .unwrap();
 
-        // // update temporal reservoir
-        // unsafe {
-        //     builder
-        //         .bind_pipeline_compute(self.restir_temporal_resampling_pipeline.clone())
-        //         .unwrap()
-        //         .push_descriptor_set(
-        //             PipelineBindPoint::Compute,
-        //             self.restir_temporal_resampling_pipeline.layout().clone(),
-        //             0,
-        //             {
-        //                 let mut descriptor_writes = vec![];
-        //                 descriptor_writes.extend(self.restir_initial_samples.descriptor_writes(
-        //                     self.frame_count % MIN_IMAGE_COUNT,
-        //                     descriptor_writes.len(),
-        //                 ));
-        //                 descriptor_writes.extend(self.restir_temporal_reservoir.descriptor_writes(
-        //                     self.frame_count % MIN_IMAGE_COUNT,
-        //                     descriptor_writes.len(),
-        //                 ));
-        //                 descriptor_writes.push(WriteDescriptorSet::buffer(
-        //                     descriptor_writes.len() as u32,
-        //                     self.debug_info[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                 ));
-        //                 descriptor_writes.into()
-        //             },
-        //         )
-        //         .unwrap()
-        //         .push_constants(
-        //             self.restir_temporal_resampling_pipeline.layout().clone(),
-        //             0,
-        //             restir_temporal_resampling::PushConstants {
-        //                 always_zero: 0,
-        //                 invocation_seed: self.rng.next_u32(),
-        //                 xsize: rt_extent[0],
-        //                 ysize: rt_extent[1],
-        //             },
-        //         )
-        //         .unwrap()
-        //         .dispatch(self.group_count(&rt_extent))
-        //         .unwrap();
-        // }
+        // update temporal reservoir
+        unsafe {
+            builder
+                .bind_pipeline_compute(self.restir_temporal_resampling_pipeline.clone())
+                .unwrap()
+                .push_descriptor_set(
+                    PipelineBindPoint::Compute,
+                    self.restir_temporal_resampling_pipeline.layout().clone(),
+                    0,
+                    {
+                        let mut descriptor_writes = vec![];
+                        descriptor_writes.extend(self.restir_initial_samples.descriptor_writes(
+                            self.frame_count % MIN_IMAGE_COUNT,
+                            descriptor_writes.len(),
+                        ));
+                        descriptor_writes.extend(self.restir_temporal_reservoir.descriptor_writes(
+                            self.frame_count % MIN_IMAGE_COUNT,
+                            descriptor_writes.len(),
+                        ));
+                        descriptor_writes.push(WriteDescriptorSet::buffer(
+                            descriptor_writes.len() as u32,
+                            self.debug_info[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                        ));
+                        descriptor_writes.into()
+                    },
+                )
+                .unwrap()
+                .push_constants(
+                    self.restir_temporal_resampling_pipeline.layout().clone(),
+                    0,
+                    restir_temporal_resampling::PushConstants {
+                        always_zero: 0,
+                        invocation_seed: self.rng.next_u32(),
+                        xsize: rt_extent[0],
+                        ysize: rt_extent[1],
+                    },
+                )
+                .unwrap()
+                .dispatch(self.group_count(&rt_extent))
+                .unwrap();
+        }
 
-        // // update spatial reservoir
-        // unsafe {
-        //     builder
-        //         .bind_pipeline_compute(self.restir_spatial_resampling_pipeline.clone())
-        //         .unwrap()
-        //         .push_descriptor_set(
-        //             PipelineBindPoint::Compute,
-        //             self.restir_spatial_resampling_pipeline.layout().clone(),
-        //             0,
-        //             {
-        //                 let mut descriptor_writes = vec![];
-        //                 descriptor_writes.extend(self.restir_temporal_reservoir.descriptor_writes(
-        //                     self.frame_count % MIN_IMAGE_COUNT,
-        //                     descriptor_writes.len(),
-        //                 ));
-        //                 descriptor_writes.extend(self.restir_spatial_reservoir.descriptor_writes(
-        //                     self.frame_count % MIN_IMAGE_COUNT,
-        //                     descriptor_writes.len(),
-        //                 ));
-        //                 descriptor_writes.push(WriteDescriptorSet::buffer(
-        //                     descriptor_writes.len() as u32,
-        //                     self.debug_info[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                 ));
-        //                 descriptor_writes.into()
-        //             },
-        //         )
-        //         .unwrap()
-        //         .push_constants(
-        //             self.restir_spatial_resampling_pipeline.layout().clone(),
-        //             0,
-        //             restir_spatial_resampling::PushConstants {
-        //                 always_zero: 0,
-        //                 num_iterations: rendering_preferences.restir_spatial_iterations,
-        //                 invocation_seed: self.rng.next_u32(),
-        //                 xsize: rt_extent[0],
-        //                 ysize: rt_extent[1],
-        //             },
-        //         )
-        //         .unwrap()
-        //         .dispatch(self.group_count(&rt_extent))
-        //         .unwrap();
-        // }
+        // update spatial reservoir
+        unsafe {
+            builder
+                .bind_pipeline_compute(self.restir_spatial_resampling_pipeline.clone())
+                .unwrap()
+                .push_descriptor_set(
+                    PipelineBindPoint::Compute,
+                    self.restir_spatial_resampling_pipeline.layout().clone(),
+                    0,
+                    {
+                        let mut descriptor_writes = vec![];
+                        descriptor_writes.extend(self.restir_temporal_reservoir.descriptor_writes(
+                            self.frame_count % MIN_IMAGE_COUNT,
+                            descriptor_writes.len(),
+                        ));
+                        descriptor_writes.extend(self.restir_spatial_reservoir.descriptor_writes(
+                            self.frame_count % MIN_IMAGE_COUNT,
+                            descriptor_writes.len(),
+                        ));
+                        descriptor_writes.push(WriteDescriptorSet::buffer(
+                            descriptor_writes.len() as u32,
+                            self.debug_info[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                        ));
+                        descriptor_writes.into()
+                    },
+                )
+                .unwrap()
+                .push_constants(
+                    self.restir_spatial_resampling_pipeline.layout().clone(),
+                    0,
+                    restir_spatial_resampling::PushConstants {
+                        always_zero: 0,
+                        num_iterations: rendering_preferences.restir_spatial_iterations,
+                        invocation_seed: self.rng.next_u32(),
+                        xsize: rt_extent[0],
+                        ysize: rt_extent[1],
+                    },
+                )
+                .unwrap()
+                .dispatch(self.group_count(&rt_extent))
+                .unwrap();
+        }
 
-        // // execute the restir finalize pipeline to compute the final radiance at the last bounce
-        // unsafe {
-        //     builder
-        //         .bind_pipeline_compute(self.restir_finalize_pipeline.clone())
-        //         .unwrap()
-        //         .push_descriptor_set(
-        //             PipelineBindPoint::Compute,
-        //             self.restir_finalize_pipeline.layout().clone(),
-        //             0,
-        //             {
-        //                 let mut descriptor_writes = vec![
-        //                     WriteDescriptorSet::buffer(
-        //                         0,
-        //                         self.ray_origins[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(
-        //                         1,
-        //                         self.ray_directions[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(
-        //                         2,
-        //                         self.bounce_emissivity[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(
-        //                         3,
-        //                         self.bounce_reflectivity[self.frame_count % MIN_IMAGE_COUNT]
-        //                             .clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(
-        //                         4,
-        //                         self.bounce_nee_mis_weight[self.frame_count % MIN_IMAGE_COUNT]
-        //                             .clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(
-        //                         5,
-        //                         self.bounce_bsdf_pdf[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                     ),
-        //                     WriteDescriptorSet::buffer(
-        //                         6,
-        //                         self.bounce_nee_pdf[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                     ),
-        //                 ];
-        //                 descriptor_writes.extend(self.restir_spatial_reservoir.descriptor_writes(
-        //                     self.frame_count % MIN_IMAGE_COUNT,
-        //                     descriptor_writes.len(),
-        //                 ));
+        // execute the restir finalize pipeline to compute the final radiance at the last bounce
+        unsafe {
+            builder
+                .bind_pipeline_compute(self.restir_finalize_pipeline.clone())
+                .unwrap()
+                .push_descriptor_set(
+                    PipelineBindPoint::Compute,
+                    self.restir_finalize_pipeline.layout().clone(),
+                    0,
+                    {
+                        let mut descriptor_writes = vec![
+                            WriteDescriptorSet::buffer(
+                                0,
+                                self.ray_origins[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                            ),
+                            WriteDescriptorSet::buffer(
+                                1,
+                                self.ray_directions[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                            ),
+                            WriteDescriptorSet::buffer(
+                                2,
+                                self.bounce_emissivity[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                            ),
+                            WriteDescriptorSet::buffer(
+                                3,
+                                self.bounce_reflectivity[self.frame_count % MIN_IMAGE_COUNT]
+                                    .clone(),
+                            ),
+                            WriteDescriptorSet::buffer(
+                                4,
+                                self.bounce_nee_mis_weight[self.frame_count % MIN_IMAGE_COUNT]
+                                    .clone(),
+                            ),
+                            WriteDescriptorSet::buffer(
+                                5,
+                                self.bounce_bsdf_pdf[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                            ),
+                            WriteDescriptorSet::buffer(
+                                6,
+                                self.bounce_nee_pdf[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                            ),
+                        ];
+                        descriptor_writes.extend(self.restir_spatial_reservoir.descriptor_writes(
+                            self.frame_count % MIN_IMAGE_COUNT,
+                            descriptor_writes.len(),
+                        ));
 
-        //                 descriptor_writes.push(WriteDescriptorSet::buffer(
-        //                     descriptor_writes.len() as u32,
-        //                     self.restir_final_target[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                 ));
-        //                 descriptor_writes.push(WriteDescriptorSet::buffer(
-        //                     descriptor_writes.len() as u32,
-        //                     self.debug_info[self.frame_count % MIN_IMAGE_COUNT].clone(),
-        //                 ));
+                        descriptor_writes.push(WriteDescriptorSet::buffer(
+                            descriptor_writes.len() as u32,
+                            self.restir_final_target[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                        ));
+                        descriptor_writes.push(WriteDescriptorSet::buffer(
+                            descriptor_writes.len() as u32,
+                            self.debug_info[self.frame_count % MIN_IMAGE_COUNT].clone(),
+                        ));
 
-        //                 descriptor_writes.into()
-        //             },
-        //         )
-        //         .unwrap()
-        //         .push_constants(
-        //             self.restir_finalize_pipeline.layout().clone(),
-        //             0,
-        //             restir_finalize::PushConstants {
-        //                 always_zero: 0,
-        //                 xsize: rt_extent[0],
-        //                 ysize: rt_extent[1],
-        //             },
-        //         )
-        //         .unwrap()
-        //         .dispatch(self.group_count(&rt_extent))
-        //         .unwrap();
-        // }
+                        descriptor_writes.into()
+                    },
+                )
+                .unwrap()
+                .push_constants(
+                    self.restir_finalize_pipeline.layout().clone(),
+                    0,
+                    restir_finalize::PushConstants {
+                        always_zero: 0,
+                        xsize: rt_extent[0],
+                        ysize: rt_extent[1],
+                    },
+                )
+                .unwrap()
+                .dispatch(self.group_count(&rt_extent))
+                .unwrap();
+        }
 
         // aggregate the samples and write to swapchain image
         unsafe {
@@ -1646,13 +1613,15 @@ impl Renderer {
 
         let command_buffer = builder.build().unwrap();
 
-        dbg!(self.frame_count % MIN_IMAGE_COUNT);
-        dbg!(self.frame_count);
-        dbg!(image_index);
+        let mut last_frame_future = std::mem::replace(
+            &mut self.frame_finished_rendering
+                [(self.frame_count + MIN_IMAGE_COUNT - 1) % MIN_IMAGE_COUNT],
+            sync::now(self.device.clone()).boxed(),
+        );
 
-        let future = this_frame_future
-            .join(last_frame_future)
-            .join(build_future)
+        last_frame_future.cleanup_finished();
+
+        let future = last_frame_future
             .join(acquire_future)
             .then_execute(self.queue.clone(), command_buffer)
             .unwrap()

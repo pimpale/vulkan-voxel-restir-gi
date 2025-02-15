@@ -271,12 +271,10 @@ impl GameWorld {
             light_top_level_acceleration_structure,
             instance_data,
             luminance_bvh,
-            build_future,
         ) = self.scene.borrow_mut().get_tlas();
 
         // render to screen
         self.renderer.render(
-            build_future,
             top_level_acceleration_structure,
             light_top_level_acceleration_structure,
             instance_data,

@@ -17,8 +17,7 @@ serde_json = "1.0.138"
 threadpool = "1.8.1"
 vulkano = "0.35"
 vulkano-shaders = { version="0.35.0", features=["shaderc-debug"]}
-vulkano-win = "0.34.0"
-winit = "0.29"
+winit = "0.30"
 
 # Add this to your Cargo.toml
 [profile.dev.package.nalgebra]
@@ -36,5 +35,5 @@ opt-level = 3
 [profile.dev.package.rand]
 opt-level = 3
 
-[patch.crates-io]
-vulkano = { path="C:/Users/gpimp/myworkspace/vulkano/vulkano" }
+# [patch.crates-io]
+# vulkano = { path="C:/Users/gpimp/myworkspace/vulkano/vulkano" }

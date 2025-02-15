@@ -5,6 +5,7 @@ use std::{
 
 use nalgebra::{Isometry3, Matrix3x4, Matrix4, Point3};
 use vulkano::{
+    DeviceSize, Packed24_8,
     acceleration_structure::{
         AccelerationStructure, AccelerationStructureBuildGeometryInfo,
         AccelerationStructureBuildRangeInfo, AccelerationStructureBuildSizesInfo,
@@ -16,14 +17,13 @@ use vulkano::{
     },
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage,
-        CopyBufferInfo, PrimaryAutoCommandBuffer, PrimaryCommandBufferAbstract,
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer,
+        PrimaryCommandBufferAbstract, allocator::StandardCommandBufferAllocator,
     },
     device::Queue,
     memory::allocator::{AllocationCreateInfo, MemoryAllocator, MemoryTypeFilter},
     pipeline::graphics::vertex_input,
     sync::GpuFuture,
-    DeviceSize, Packed24_8,
 };
 
 use crate::render_system::bvh::{self, aabb::Aabb};
@@ -213,7 +213,6 @@ where
         Arc<AccelerationStructure>,
         Subbuffer<[InstanceData]>,
         Subbuffer<[BvhNode]>,
-        Box<dyn GpuFuture>,
     ) {
         // rebuild the instance buffer if any object was moved, added, or removed
         if self.cached_tlas_state != TopLevelAccelerationStructureState::UpToDate {
@@ -329,13 +328,11 @@ where
             self.cached_light_bvh = Some(light_tl_bvh_buffer);
         }
 
-        let future = match self.cached_tlas_state {
-            TopLevelAccelerationStructureState::UpToDate => {
-                vulkano::sync::now(self.general_queue.device().clone()).boxed()
-            }
+        match self.cached_tlas_state {
+            TopLevelAccelerationStructureState::UpToDate => {}
             _ => {
-                // swap command buffers
-                let blas_command_buffer = std::mem::replace(
+                // swap command buffers, and continue building
+                let mut tlas_command_buffer = std::mem::replace(
                     &mut self.blas_command_buffer,
                     AutoCommandBufferBuilder::primary(
                         self.command_buffer_allocator.clone(),
@@ -344,19 +341,6 @@ where
                     )
                     .unwrap(),
                 );
-
-                let blas_build_future = blas_command_buffer
-                    .build()
-                    .unwrap()
-                    .execute(self.general_queue.clone())
-                    .unwrap();
-
-                let mut tlas_command_buffer = AutoCommandBufferBuilder::primary(
-                    self.command_buffer_allocator.clone(),
-                    self.general_queue.queue_family_index(),
-                    CommandBufferUsage::OneTimeSubmit,
-                )
-                .unwrap();
 
                 // initialize tlas build
                 let tlas = create_top_level_acceleration_structure(
@@ -400,20 +384,21 @@ where
                 );
 
                 // actually submit acceleration structure build future
-                let tlas_build_future = tlas_command_buffer
+                tlas_command_buffer
                     .build()
                     .unwrap()
-                    .execute_after(blas_build_future, self.general_queue.clone())
+                    .execute(self.general_queue.clone())
+                    .unwrap()
+                    .then_signal_fence_and_flush()
+                    .unwrap()
+                    .wait(None)
                     .unwrap();
 
                 // update state
                 self.cached_tlas = Some(tlas);
                 self.cached_light_tlas = Some(light_tlas);
-
-                // return the future
-                tlas_build_future.boxed()
             }
-        };
+        }
 
         // at this point the tlas is up to date
         self.cached_tlas_state = TopLevelAccelerationStructureState::UpToDate;
@@ -431,7 +416,6 @@ where
             self.cached_light_tlas.clone().unwrap(),
             self.cached_instance_data.clone().unwrap(),
             self.cached_light_bvh.clone().unwrap(),
-            future,
         );
     }
 
