@@ -35,3 +35,6 @@ opt-level = 3
 # Add this to your Cargo.toml
 [profile.dev.package.rand]
 opt-level = 3
+
+[patch.crates-io]
+vulkano = { path="C:/Users/gpimp/myworkspace/vulkano/vulkano" }
