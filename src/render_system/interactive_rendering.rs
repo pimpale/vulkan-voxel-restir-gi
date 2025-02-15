@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{f32::MIN, sync::Arc};
 
 use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
@@ -1638,7 +1638,7 @@ impl Renderer {
         );
 
         let mut last_frame_future = std::mem::replace(
-            &mut self.frame_finished_rendering[(self.frame_count - 1) % MIN_IMAGE_COUNT],
+            &mut self.frame_finished_rendering[(self.frame_count + MIN_IMAGE_COUNT - 1) % MIN_IMAGE_COUNT],
             sync::now(self.device.clone()).boxed(),
         );
 

@@ -20,6 +20,9 @@ vulkano-shaders = { version="0.35.0", features=["shaderc-debug"]}
 vulkano-win = "0.34.0"
 winit = "0.29"
 
+# Add this to your Cargo.toml
+[profile.dev.package.nalgebra]
+opt-level = 3
 
 # Add this to your Cargo.toml
 [profile.dev.package.rapier3d]
@@ -27,4 +30,8 @@ opt-level = 3
 
 # Add this to your Cargo.toml
 [profile.dev.package.noise]
+opt-level = 3
+
+# Add this to your Cargo.toml
+[profile.dev.package.rand]
 opt-level = 3
