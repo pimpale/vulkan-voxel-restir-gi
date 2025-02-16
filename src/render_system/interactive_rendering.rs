@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use ash::vk::Fence;
 use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
 use rand::RngCore;
@@ -30,7 +31,7 @@ use vulkano::{
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
     swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo},
-    sync::{self, GpuFuture},
+    sync::{self, GpuFuture, future::FenceSignalFuture},
 };
 use winit::window::Window;
 
@@ -362,7 +363,7 @@ pub struct Renderer {
     // restir final target
     restir_final_target: Vec<Subbuffer<[f32]>>,
     postprocess_target: Vec<Subbuffer<[u8]>>,
-    frame_finished_rendering: Vec<Box<dyn GpuFuture>>,
+    frame_finished_rendering: Vec<Option<FenceSignalFuture<Box<dyn GpuFuture>>>>,
     swapchain_images: Vec<Arc<Image>>,
     raygen_pipeline: Arc<ComputePipeline>,
     raytrace_pipeline: Arc<ComputePipeline>,
@@ -761,9 +762,7 @@ impl Renderer {
         )
         .unwrap();
 
-        let frame_futures = (0..swapchain_images.len())
-            .map(|_| Box::new(sync::now(device.clone())) as Box<dyn GpuFuture>)
-            .collect();
+        let frame_futures = (0..swapchain_images.len()).map(|_| None).collect();
 
         let mut renderer = Renderer {
             scale: 1,
@@ -829,9 +828,7 @@ impl Renderer {
 
         self.swapchain = new_swapchain;
         self.swapchain_images = new_images;
-        self.frame_finished_rendering = (0..self.swapchain_images.len())
-            .map(|_| Box::new(sync::now(self.device.clone())) as Box<dyn GpuFuture>)
-            .collect();
+        self.frame_finished_rendering = (0..self.swapchain_images.len()).map(|_| None).collect();
         self.create_buffers();
     }
 
@@ -1209,7 +1206,7 @@ impl Renderer {
 
         // dispatch nee pdf pipeline
         for bounce in 0..(self.num_bounces - 1) {
-        // for bounce in 0..0 {
+            // for bounce in 0..0 {
             let b = bounce as u64;
             unsafe {
                 // compute nee pdf
@@ -1636,35 +1633,37 @@ impl Renderer {
 
         let command_buffer = builder.build().unwrap();
 
-        let mut last_frame_future = std::mem::replace(
-            &mut self.frame_finished_rendering
-                [(self.frame_count + MIN_IMAGE_COUNT - 1) % MIN_IMAGE_COUNT],
-            sync::now(self.device.clone()).boxed(),
+        let last_cycle_future = std::mem::replace(
+            &mut self.frame_finished_rendering[self.frame_count % MIN_IMAGE_COUNT],
+            None,
         );
 
-        last_frame_future.cleanup_finished();
+        match last_cycle_future {
+            Some(f) => f.wait(None).unwrap(),
+            None => {}
+        }
 
-        let future = last_frame_future
-            .join(acquire_future)
+        let future = acquire_future
             .then_execute(self.queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
                 self.queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_index),
             )
+            .boxed()
             .then_signal_fence_and_flush();
 
         self.frame_finished_rendering[self.frame_count % MIN_IMAGE_COUNT] =
             match future.map_err(Validated::unwrap) {
-                Ok(future) => future.boxed(),
+                Ok(future) => Some(future),
                 Err(VulkanError::OutOfDate) => {
                     self.wdd_needs_rebuild = true;
                     println!("swapchain out of date (at flush)");
-                    sync::now(self.device.clone()).boxed()
+                    None
                 }
                 Err(e) => {
                     println!("failed to flush future: {e}");
-                    sync::now(self.device.clone()).boxed()
+                    None
                 }
             };
 

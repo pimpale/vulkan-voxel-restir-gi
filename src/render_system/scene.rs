@@ -446,7 +446,7 @@ where
                             memory_barriers: [MemoryBarrier {
                                 src_stages: PipelineStages::ACCELERATION_STRUCTURE_BUILD,
                                 src_access: AccessFlags::ACCELERATION_STRUCTURE_WRITE,
-                                dst_stages: PipelineStages::COMPUTE_SHADER,
+                                dst_stages: PipelineStages::ALL_COMMANDS,
                                 dst_access: AccessFlags::ACCELERATION_STRUCTURE_READ,
                                 ..Default::default()
                             }]
@@ -458,42 +458,21 @@ where
                 }
 
                 // actually submit acceleration structure build future
-
-                // let fence = Fence::new(
-                //     self.general_queue.device().clone(),
-                //     FenceCreateInfo::default(),
-                // )
-                // .unwrap();
-
                 unsafe {
                     // finish command buffer
-                    let tlas_command_buffer = tlas_command_buffer.end().unwrap();
+                    let command_buffer = tlas_command_buffer.end().unwrap();
 
                     let submit_fn = self.general_queue.device().fns().v1_0.queue_submit;
-                    let wait_fence_fn = self.general_queue.device().fns().v1_0.wait_for_fences;
 
-                    dbg!("submitting");
                     submit_fn(
                         self.general_queue.handle(),
                         1,
-                        &SubmitInfo::default().command_buffers(&[tlas_command_buffer.handle()])
+                        &SubmitInfo::default().command_buffers(&[command_buffer.handle()])
                             as *const _,
                         ash::vk::Fence::null(),
                     )
                     .result()
                     .unwrap();
-                    dbg!("submitted");
-
-                    // wait_fence_fn(
-                    //     self.general_queue.device().handle(),
-                    //     1,
-                    //     &fence.handle(),
-                    //     1,
-                    //     u64::MAX,
-                    // )
-                    // .result()
-                    // .unwrap();
-                    // dbg!("got here 2");
                 }
 
                 // update state
