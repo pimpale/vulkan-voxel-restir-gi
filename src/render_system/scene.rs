@@ -484,10 +484,6 @@ where
                     .unwrap();
                     dbg!("submitted");
 
-                    std::thread::sleep(std::time::Duration::from_millis(100));
-
-                    dbg!("sleept");
-
                     // wait_fence_fn(
                     //     self.general_queue.device().handle(),
                     //     1,
