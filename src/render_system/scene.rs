@@ -64,6 +64,9 @@ struct FrameData {
     instance_data: Option<Subbuffer<[InstanceData]>>,
     // light_bvh
     light_bvh: Option<Subbuffer<[BvhNode]>>,
+    // acceleration structure
+    tlas: Option<Arc<AccelerationStructure>>,
+    light_tlas: Option<Arc<AccelerationStructure>>,
 }
 
 impl Default for FrameData {
@@ -73,6 +76,8 @@ impl Default for FrameData {
             removed_objects: vec![],
             instance_data: None,
             light_bvh: None,
+            tlas: None,
+            light_tlas: None,
         }
     }
 }
@@ -236,6 +241,10 @@ where
     ) {
         // rebuild the instance buffer if any object was moved, added, or removed
         if self.cached_tlas_state != TopLevelAccelerationStructureState::UpToDate {
+            // save a reference to the old data so that it's not dropped
+            self.old_data[0].instance_data = self.cached_instance_data.clone();
+            self.old_data[0].light_bvh = self.cached_light_bvh.clone();
+
             let ((isometries, aabbs), (luminances, instance_ids)): (
                 (Vec<_>, Vec<_>),
                 (Vec<_>, Vec<_>),
@@ -351,6 +360,10 @@ where
         match self.cached_tlas_state {
             TopLevelAccelerationStructureState::UpToDate => {}
             _ => {
+                // save a reference to the old data so that it's not dropped
+                self.old_data[0].tlas = self.cached_tlas.clone();
+                self.old_data[0].light_tlas = self.cached_light_tlas.clone();
+
                 // swap command buffers, and continue building
                 let mut tlas_command_buffer = std::mem::replace(
                     &mut self.blas_command_buffer,
@@ -496,13 +509,9 @@ where
         // at this point the tlas is up to date
         self.cached_tlas_state = TopLevelAccelerationStructureState::UpToDate;
 
-        // save a reference to the old data so that it's not dropped
-        self.old_data[0].instance_data = self.cached_instance_data.clone();
-        self.old_data[0].light_bvh = self.cached_light_bvh.clone();
-        
         // start new frame's data
         self.old_data.push_front(FrameData::default());
-        
+
         // return the tlas
         return (
             self.cached_tlas.clone().unwrap(),
@@ -778,6 +787,9 @@ fn create_top_level_acceleration_structure(
         instances,
     )
     .unwrap();
+
+    // keep the buffer alive
+    keep_alive.push(values.clone().into_bytes());
 
     let geometries =
         AccelerationStructureGeometries::Instances(AccelerationStructureGeometryInstancesData {
