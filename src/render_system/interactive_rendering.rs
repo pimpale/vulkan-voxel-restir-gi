@@ -4,15 +4,33 @@ use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
 use rand::RngCore;
 use vulkano::{
-    acceleration_structure::AccelerationStructure, buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyBufferToImageInfo, PrimaryCommandBufferAbstract
-    }, descriptor_set::{
-        allocator::StandardDescriptorSetAllocator, layout::{DescriptorBindingFlags, DescriptorSetLayoutCreateFlags}, DescriptorBufferInfo, DescriptorSet, WriteDescriptorSet
-    }, device::{
-        physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, DeviceOwned, Queue, QueueCreateInfo, QueueFlags
-    }, format::Format, image::{sampler::Sampler, view::ImageView, Image, ImageCreateInfo, ImageType, ImageUsage}, instance::Instance, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
-        compute::ComputePipelineCreateInfo, layout::PipelineDescriptorSetLayoutCreateInfo, ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo
-    }, swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, GpuFuture}, Validated, VulkanError
+    Validated, VulkanError,
+    acceleration_structure::AccelerationStructure,
+    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
+    command_buffer::{
+        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyBufferToImageInfo,
+        PrimaryCommandBufferAbstract, allocator::StandardCommandBufferAllocator,
+    },
+    descriptor_set::{
+        DescriptorBufferInfo, DescriptorSet, WriteDescriptorSet,
+        allocator::StandardDescriptorSetAllocator,
+        layout::{DescriptorBindingFlags, DescriptorSetLayoutCreateFlags},
+    },
+    device::{
+        Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, DeviceOwned, Queue,
+        QueueCreateInfo, QueueFlags, physical::PhysicalDeviceType,
+    },
+    format::Format,
+    image::{Image, ImageCreateInfo, ImageType, ImageUsage, sampler::Sampler, view::ImageView},
+    instance::Instance,
+    memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator},
+    pipeline::{
+        ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout,
+        PipelineShaderStageCreateInfo, compute::ComputePipelineCreateInfo,
+        layout::PipelineDescriptorSetLayoutCreateInfo,
+    },
+    swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo},
+    sync::{self, GpuFuture},
 };
 use winit::window::Window;
 
@@ -20,6 +38,7 @@ use crate::camera::RenderingPreferences;
 
 use super::{
     bvh::BvhNode,
+    scene::Scene,
     shader::{
         nee_pdf, outgoing_radiance, postprocess, raygen, raytrace, restir_finalize,
         restir_spatial_resampling, restir_temporal_resampling,
@@ -937,16 +956,20 @@ impl Renderer {
 
     pub fn render(
         &mut self,
-        top_level_acceleration_structure: Arc<AccelerationStructure>,
-        light_top_level_acceleration_structure: Arc<AccelerationStructure>,
-        instance_data: Subbuffer<[InstanceData]>,
-        luminance_bvh: Subbuffer<[BvhNode]>,
+        scene: &mut Scene<u32>,
         eye: Point3<f32>,
         front: Vector3<f32>,
         right: Vector3<f32>,
         up: Vector3<f32>,
         rendering_preferences: RenderingPreferences,
     ) {
+        let (
+            top_level_acceleration_structure,
+            light_top_level_acceleration_structure,
+            instance_data,
+            luminance_bvh,
+        ) = scene.get_tlas();
+
         // Whenever the window resizes we need to recreate everything dependent on the window size.
         // In this example that includes the swapchain, the framebuffers and the dynamic state viewport.
         if self.wdd_needs_rebuild {
@@ -1185,8 +1208,8 @@ impl Renderer {
             .unwrap();
 
         // dispatch nee pdf pipeline
-        // for bounce in 0..(self.num_bounces - 1) {
-        for bounce in 0..0 {
+        for bounce in 0..(self.num_bounces - 1) {
+        // for bounce in 0..0 {
             let b = bounce as u64;
             unsafe {
                 // compute nee pdf

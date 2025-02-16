@@ -3,9 +3,10 @@ use std::{
     sync::Arc,
 };
 
+use ash::vk::SubmitInfo;
 use nalgebra::{Isometry3, Matrix3x4, Matrix4, Point3};
 use vulkano::{
-    DeviceSize, Packed24_8,
+    DeviceSize, Packed24_8, VulkanObject,
     acceleration_structure::{
         AccelerationStructure, AccelerationStructureBuildGeometryInfo,
         AccelerationStructureBuildRangeInfo, AccelerationStructureBuildSizesInfo,
@@ -17,13 +18,17 @@ use vulkano::{
     },
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
-        AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, PrimaryAutoCommandBuffer,
-        PrimaryCommandBufferAbstract, allocator::StandardCommandBufferAllocator,
+        AutoCommandBufferBuilder, CommandBufferBeginInfo, CommandBufferLevel, CommandBufferUsage,
+        CopyBufferInfo, PrimaryCommandBufferAbstract, RecordingCommandBuffer,
+        allocator::StandardCommandBufferAllocator,
     },
     device::Queue,
     memory::allocator::{AllocationCreateInfo, MemoryAllocator, MemoryTypeFilter},
     pipeline::graphics::vertex_input,
-    sync::GpuFuture,
+    sync::{
+        AccessFlags, DependencyInfo, GpuFuture, MemoryBarrier, PipelineStages,
+        fence::{Fence, FenceCreateInfo},
+    },
 };
 
 use crate::render_system::bvh::{self, aabb::Aabb};
@@ -51,12 +56,25 @@ enum TopLevelAccelerationStructureState {
 }
 
 struct FrameData {
+    // build buffers
+    build_buffers: Vec<Subbuffer<[u8]>>,
     // objects removed in this frame
     removed_objects: Vec<Object>,
     // instance_data
     instance_data: Option<Subbuffer<[InstanceData]>>,
     // light_bvh
     light_bvh: Option<Subbuffer<[BvhNode]>>,
+}
+
+impl Default for FrameData {
+    fn default() -> Self {
+        FrameData {
+            build_buffers: vec![],
+            removed_objects: vec![],
+            instance_data: None,
+            light_bvh: None,
+        }
+    }
 }
 
 /// Corresponds to a TLAS
@@ -78,7 +96,7 @@ pub struct Scene<K> {
     // last frame state
     cached_tlas_state: TopLevelAccelerationStructureState,
     // command buffer all building commands are submitted to
-    blas_command_buffer: AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    blas_command_buffer: RecordingCommandBuffer,
 }
 
 #[allow(dead_code)]
@@ -94,10 +112,14 @@ where
         n_swapchain_images: usize,
         texture_luminances: Vec<f32>,
     ) -> Scene<K> {
-        let command_buffer = AutoCommandBufferBuilder::primary(
+        let command_buffer = RecordingCommandBuffer::new(
             command_buffer_allocator.clone(),
             general_queue.queue_family_index(),
-            CommandBufferUsage::OneTimeSubmit,
+            CommandBufferLevel::Primary,
+            CommandBufferBeginInfo {
+                usage: CommandBufferUsage::OneTimeSubmit,
+                ..Default::default()
+            },
         )
         .unwrap();
 
@@ -108,11 +130,7 @@ where
             memory_allocator,
             texture_luminances,
             objects: BTreeMap::new(),
-            old_data: VecDeque::from([FrameData {
-                removed_objects: vec![],
-                instance_data: None,
-                light_bvh: None,
-            }]),
+            old_data: VecDeque::from([FrameData::default()]),
             n_swapchain_images,
             cached_tlas: None,
             cached_light_tlas: None,
@@ -143,6 +161,7 @@ where
             } => {
                 let blas = create_bottom_level_acceleration_structure(
                     &mut self.blas_command_buffer,
+                    &mut self.old_data[0].build_buffers,
                     self.memory_allocator.clone(),
                     &[&vertex_buffer],
                     GeometryFlags::OPAQUE,
@@ -151,6 +170,7 @@ where
                 let light_blas = match light_vertex_buffer.clone() {
                     Some(light_vertex_buffer) => Some(create_bottom_level_acceleration_structure(
                         &mut self.blas_command_buffer,
+                        &mut self.old_data[0].build_buffers,
                         self.memory_allocator.clone(),
                         &[&light_vertex_buffer],
                         GeometryFlags::NO_DUPLICATE_ANY_HIT_INVOCATION,
@@ -334,17 +354,39 @@ where
                 // swap command buffers, and continue building
                 let mut tlas_command_buffer = std::mem::replace(
                     &mut self.blas_command_buffer,
-                    AutoCommandBufferBuilder::primary(
+                    RecordingCommandBuffer::new(
                         self.command_buffer_allocator.clone(),
                         self.general_queue.queue_family_index(),
-                        CommandBufferUsage::OneTimeSubmit,
+                        CommandBufferLevel::Primary,
+                        CommandBufferBeginInfo {
+                            usage: CommandBufferUsage::OneTimeSubmit,
+                            ..Default::default()
+                        },
                     )
                     .unwrap(),
                 );
 
+                // add barrier to ensure blas are built
+                unsafe {
+                    tlas_command_buffer
+                        .pipeline_barrier(&DependencyInfo {
+                            memory_barriers: [MemoryBarrier {
+                                src_stages: PipelineStages::ACCELERATION_STRUCTURE_BUILD,
+                                src_access: AccessFlags::ACCELERATION_STRUCTURE_WRITE,
+                                dst_stages: PipelineStages::ACCELERATION_STRUCTURE_BUILD,
+                                dst_access: AccessFlags::ACCELERATION_STRUCTURE_READ,
+                                ..Default::default()
+                            }]
+                            .as_ref()
+                            .into(),
+                            ..Default::default()
+                        })
+                        .unwrap();
+                }
                 // initialize tlas build
                 let tlas = create_top_level_acceleration_structure(
                     &mut tlas_command_buffer,
+                    &mut self.old_data[0].build_buffers,
                     self.memory_allocator.clone(),
                     &self
                         .objects
@@ -358,6 +400,7 @@ where
 
                 let light_tlas = create_top_level_acceleration_structure(
                     &mut tlas_command_buffer,
+                    &mut self.old_data[0].build_buffers,
                     self.memory_allocator.clone(),
                     &self
                         .objects
@@ -383,16 +426,66 @@ where
                         .collect::<Vec<_>>(),
                 );
 
+                // add barrier to ensure tlas is built
+                unsafe {
+                    tlas_command_buffer
+                        .pipeline_barrier(&DependencyInfo {
+                            memory_barriers: [MemoryBarrier {
+                                src_stages: PipelineStages::ACCELERATION_STRUCTURE_BUILD,
+                                src_access: AccessFlags::ACCELERATION_STRUCTURE_WRITE,
+                                dst_stages: PipelineStages::COMPUTE_SHADER,
+                                dst_access: AccessFlags::ACCELERATION_STRUCTURE_READ,
+                                ..Default::default()
+                            }]
+                            .as_ref()
+                            .into(),
+                            ..Default::default()
+                        })
+                        .unwrap();
+                }
+
                 // actually submit acceleration structure build future
-                tlas_command_buffer
-                    .build()
-                    .unwrap()
-                    .execute(self.general_queue.clone())
-                    .unwrap()
-                    .then_signal_fence_and_flush()
-                    .unwrap()
-                    .wait(None)
+
+                // let fence = Fence::new(
+                //     self.general_queue.device().clone(),
+                //     FenceCreateInfo::default(),
+                // )
+                // .unwrap();
+
+                unsafe {
+                    // finish command buffer
+                    let tlas_command_buffer = tlas_command_buffer.end().unwrap();
+
+                    let submit_fn = self.general_queue.device().fns().v1_0.queue_submit;
+                    let wait_fence_fn = self.general_queue.device().fns().v1_0.wait_for_fences;
+
+                    dbg!("submitting");
+                    submit_fn(
+                        self.general_queue.handle(),
+                        1,
+                        &SubmitInfo::default().command_buffers(&[tlas_command_buffer.handle()])
+                            as *const _,
+                        ash::vk::Fence::null(),
+                    )
+                    .result()
                     .unwrap();
+                    dbg!("submitted");
+
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+
+                    dbg!("sleept");
+
+                    // wait_fence_fn(
+                    //     self.general_queue.device().handle(),
+                    //     1,
+                    //     &fence.handle(),
+                    //     1,
+                    //     u64::MAX,
+                    // )
+                    // .result()
+                    // .unwrap();
+                    // dbg!("got here 2");
+                }
 
                 // update state
                 self.cached_tlas = Some(tlas);
@@ -404,12 +497,12 @@ where
         self.cached_tlas_state = TopLevelAccelerationStructureState::UpToDate;
 
         // save a reference to the old data so that it's not dropped
-        self.old_data.push_front(FrameData {
-            removed_objects: vec![],
-            instance_data: self.cached_instance_data.clone(),
-            light_bvh: self.cached_light_bvh.clone(),
-        });
-
+        self.old_data[0].instance_data = self.cached_instance_data.clone();
+        self.old_data[0].light_bvh = self.cached_light_bvh.clone();
+        
+        // start new frame's data
+        self.old_data.push_front(FrameData::default());
+        
         // return the tlas
         return (
             self.cached_tlas.clone().unwrap(),
@@ -649,7 +742,8 @@ impl SceneUploader {
 }
 
 fn create_top_level_acceleration_structure(
-    builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    builder: &mut RecordingCommandBuffer,
+    keep_alive: &mut Vec<Subbuffer<[u8]>>,
     memory_allocator: Arc<dyn MemoryAllocator>,
     bottom_level_acceleration_structures: &[(Option<&AccelerationStructure>, &Isometry3<f32>)],
 ) -> Arc<AccelerationStructure> {
@@ -708,6 +802,7 @@ fn create_top_level_acceleration_structure(
 
     build_acceleration_structure(
         builder,
+        keep_alive,
         memory_allocator,
         AccelerationStructureType::TopLevel,
         build_info,
@@ -717,7 +812,8 @@ fn create_top_level_acceleration_structure(
 }
 
 fn create_bottom_level_acceleration_structure<T: BufferContents + vertex_input::Vertex>(
-    builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    builder: &mut RecordingCommandBuffer,
+    keep_alive: &mut Vec<Subbuffer<[u8]>>,
     memory_allocator: Arc<dyn MemoryAllocator>,
     vertex_buffers: &[&Subbuffer<[T]>],
     flags: GeometryFlags,
@@ -761,6 +857,7 @@ fn create_bottom_level_acceleration_structure<T: BufferContents + vertex_input::
 
     build_acceleration_structure(
         builder,
+        keep_alive,
         memory_allocator,
         AccelerationStructureType::BottomLevel,
         build_info,
@@ -840,8 +937,11 @@ fn create_scratch_buffer(
 // SAFETY: If build_info.geometries is AccelerationStructureGeometries::Triangles, then the data in
 // build_info.geometries.triangles.vertex_data must be valid for the duration of the use of the returned
 // acceleration structure.
+// SAFETY: must keep "acceleration_structure" alive as long as the acceleration structure is in use
+// SAFETY: must keep "scratch_buffer" alive as long as the acceleration structure is being built
 fn build_acceleration_structure(
-    builder: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    builder: &mut RecordingCommandBuffer,
+    keep_alive: &mut Vec<Subbuffer<[u8]>>,
     memory_allocator: Arc<dyn MemoryAllocator>,
     ty: AccelerationStructureType,
     mut build_info: AccelerationStructureBuildGeometryInfo,
@@ -867,13 +967,18 @@ fn build_acceleration_structure(
     let scratch_buffer = create_scratch_buffer(memory_allocator.clone(), build_scratch_size);
 
     build_info.dst_acceleration_structure = Some(acceleration_structure.clone());
-    build_info.scratch_data = Some(scratch_buffer);
+    build_info.scratch_data = Some(scratch_buffer.clone());
 
     unsafe {
         builder
-            .build_acceleration_structure(build_info, build_range_infos.into_iter().collect())
+            .build_acceleration_structure(
+                &build_info,
+                build_range_infos.into_iter().collect::<Vec<_>>().as_slice(),
+            )
             .unwrap();
     }
+
+    keep_alive.push(scratch_buffer.clone());
 
     acceleration_structure
 }

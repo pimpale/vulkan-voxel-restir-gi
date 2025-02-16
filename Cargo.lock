@@ -2347,6 +2347,7 @@ dependencies = [
 name = "vulkan-voxel-restir-gi"
 version = "0.1.0"
 dependencies = [
+ "ash",
  "image",
  "nalgebra",
  "noise",

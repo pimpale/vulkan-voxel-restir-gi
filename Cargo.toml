@@ -17,6 +17,7 @@ serde_json = "1.0.138"
 threadpool = "1.8.1"
 vulkano = "0.35"
 vulkano-shaders = { version="0.35.0", features=["shaderc-debug"]}
+ash = "0.38"
 winit = "0.30"
 
 # Add this to your Cargo.toml

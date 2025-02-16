@@ -266,25 +266,19 @@ impl GameWorld {
             let camera = self.camera.borrow();
             (camera.eye_front_right_up(), camera.rendering_preferences())
         };
-        let (
-            top_level_acceleration_structure,
-            light_top_level_acceleration_structure,
-            instance_data,
-            luminance_bvh,
-        ) = self.scene.borrow_mut().get_tlas();
 
         // render to screen
+        {
+            let mut mutscene = self.scene.borrow_mut();
         self.renderer.render(
-            top_level_acceleration_structure,
-            light_top_level_acceleration_structure,
-            instance_data,
-            luminance_bvh,
+            &mut mutscene,
             eye,
             front,
             right,
             up,
             rendering_preferences,
         );
+    }
 
         // at this point we can now garbage collect removed entities from the last step (but not this step yet!)
         // this is because the the entities might potentially be in use until the next frame has started rendering
