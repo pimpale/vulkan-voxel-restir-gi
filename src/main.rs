@@ -2,20 +2,15 @@ use std::{error::Error, sync::Arc};
 
 use game_system::game_world::{EntityCreationData, EntityPhysicsData, GameWorld};
 use nalgebra::{Isometry3, Point3, Vector3};
-use rapier3d::{dynamics::RigidBodyType, geometry::ColliderBuilder};
+use rapier3d::dynamics::RigidBodyType;
 
 use vulkano::{
-    buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer}, command_buffer::{
-        allocator::StandardCommandBufferAllocator, AutoCommandBufferBuilder, CommandBufferUsage, RenderingAttachmentInfo, RenderingInfo
-    }, descriptor_set::allocator::StandardDescriptorSetAllocator, device::{
-        physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags
-    }, image::{view::ImageView, Image, ImageUsage}, instance::{Instance, InstanceCreateFlags, InstanceCreateInfo}, memory::allocator::{AllocationCreateInfo, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{
-        graphics::{
-            color_blend::{ColorBlendAttachmentState, ColorBlendState}, input_assembly::InputAssemblyState, multisample::MultisampleState, rasterization::RasterizationState, subpass::PipelineRenderingCreateInfo, vertex_input::{Vertex, VertexDefinition}, viewport::{Viewport, ViewportState}, GraphicsPipelineCreateInfo
-        }, layout::PipelineDescriptorSetLayoutCreateInfo, DynamicState, GraphicsPipeline, PipelineLayout, PipelineShaderStageCreateInfo
-    }, render_pass::{AttachmentLoadOp, AttachmentStoreOp}, swapchain::{
-        acquire_next_image, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo
-    }, sync::{self, GpuFuture}, Validated, Version, VulkanError, VulkanLibrary
+    VulkanLibrary,
+    command_buffer::allocator::StandardCommandBufferAllocator,
+    descriptor_set::allocator::StandardDescriptorSetAllocator,
+    instance::{Instance, InstanceCreateFlags, InstanceCreateInfo},
+    memory::allocator::StandardMemoryAllocator,
+    swapchain::Surface,
 };
 use winit::{
     application::ApplicationHandler,
@@ -361,7 +356,7 @@ impl ApplicationHandler for App {
                 let elapsed = rcx.start_time.elapsed();
                 if elapsed.as_secs() >= 1 {
                     println!("fps: {}", rcx.frame_count);
-                   rcx. frame_count = 0;
+                    rcx.frame_count = 0;
                     rcx.start_time = std::time::Instant::now();
                 }
 

@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
-use ash::vk::Fence;
 use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
 use rand::prelude::*;
 use vulkano::{
     Validated, VulkanError,
-    acceleration_structure::AccelerationStructure,
     buffer::{Buffer, BufferContents, BufferCreateInfo, BufferUsage, Subbuffer},
     command_buffer::{
         AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferInfo, CopyBufferToImageInfo,
@@ -31,7 +29,7 @@ use vulkano::{
         layout::PipelineDescriptorSetLayoutCreateInfo,
     },
     swapchain::{self, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo},
-    sync::{self, GpuFuture, future::FenceSignalFuture},
+    sync::{GpuFuture, future::FenceSignalFuture},
 };
 use winit::window::Window;
 

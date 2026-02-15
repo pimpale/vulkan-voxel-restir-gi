@@ -37,7 +37,7 @@ impl DirVecs {
 #[derive(Clone, Debug)]
 pub struct RenderingPreferences {
     // 0 == none, 1 == nee
-    pub nee_type: u32, 
+    pub nee_type: u32,
     // 0 == no debug view, 1 == debug view
     pub debug_view: u32,
     // 0..10 restir spatial iterations

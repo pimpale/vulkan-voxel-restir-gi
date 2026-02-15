@@ -1,7 +1,7 @@
-use nalgebra::{matrix, vector, Isometry3, Point3, Vector3, Vector6};
+use nalgebra::{Isometry3, Point3, Vector3, Vector6, matrix, vector};
 
 use crate::{
-    render_system::bvh::{aabb::Aabb, BvhNode},
+    render_system::bvh::{BvhNode, aabb::Aabb},
     utils,
 };
 
@@ -370,7 +370,6 @@ pub fn build_bl_bvh(
         (opt_bvh, aabb, luminance)
     }
 }
-
 
 pub fn build_tl_bvh(
     // the transformation applied to each primitive

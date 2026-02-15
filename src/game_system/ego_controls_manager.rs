@@ -119,7 +119,8 @@ impl Manager for EgoControlsManager {
 
         if UserInputState::key_pressed(window_events, KeyCode::KeyI) {
             let mut current_prefs = camera.rendering_preferences();
-            current_prefs.restir_spatial_iterations = match current_prefs.restir_spatial_iterations {
+            current_prefs.restir_spatial_iterations = match current_prefs.restir_spatial_iterations
+            {
                 0 => 5,
                 5 => 10,
                 10 => 15,
