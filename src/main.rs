@@ -1,4 +1,3 @@
-#![feature(array_chunks)]
 use std::{error::Error, sync::Arc};
 
 use game_system::game_world::{EntityCreationData, EntityPhysicsData, GameWorld};

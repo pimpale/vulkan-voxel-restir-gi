@@ -3,7 +3,7 @@ use std::sync::Arc;
 use ash::vk::Fence;
 use image::RgbaImage;
 use nalgebra::{Point3, Vector3};
-use rand::RngCore;
+use rand::prelude::*;
 use vulkano::{
     Validated, VulkanError,
     acceleration_structure::AccelerationStructure,

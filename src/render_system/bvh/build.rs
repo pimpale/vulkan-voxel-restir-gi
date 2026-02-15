@@ -260,13 +260,13 @@ pub fn build_bl_bvh(
     let mut prim_idxs = (0..n_prims).collect::<Vec<_>>();
 
     let prim_aabbs = prim_vertexes
-        .array_chunks()
-        .map(|chunk: &[Point3<f32>; 3]| Aabb::from_points(chunk))
+        .chunks_exact(3)
+        .map(Aabb::from_points)
         .collect::<Vec<_>>();
 
     let prim_centroids = prim_vertexes
-        .array_chunks()
-        .map(|[v0, v1, v2]| Point3::from((v0.coords + v1.coords + v2.coords) / 3.0))
+        .chunks_exact(3)
+        .map(|v| Point3::from((v[0].coords + v[1].coords + v[2].coords) / 3.0))
         .collect::<Vec<_>>();
 
     let mut nodes = vec![];
@@ -370,6 +370,7 @@ pub fn build_bl_bvh(
         (opt_bvh, aabb, luminance)
     }
 }
+
 
 pub fn build_tl_bvh(
     // the transformation applied to each primitive

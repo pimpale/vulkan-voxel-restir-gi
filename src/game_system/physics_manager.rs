@@ -14,13 +14,14 @@ use rapier3d::dynamics::RigidBodyBuilder;
 use rapier3d::dynamics::RigidBodyHandle;
 use rapier3d::dynamics::RigidBodySet;
 use rapier3d::dynamics::RigidBodyType;
-use rapier3d::geometry::DefaultBroadPhase;
 use rapier3d::geometry::ColliderSet;
+use rapier3d::geometry::DefaultBroadPhase;
 use rapier3d::geometry::NarrowPhase;
+use rapier3d::math::Vector;
+use rapier3d::parry::query::DefaultQueryDispatcher;
 use rapier3d::parry::query::ShapeCastOptions;
 use rapier3d::pipeline::PhysicsPipeline;
 use rapier3d::pipeline::QueryFilter;
-use rapier3d::pipeline::QueryPipeline;
 
 use crate::game_system::game_world::EntityCreationData;
 use crate::game_system::game_world::EntityPhysicsData;
@@ -47,7 +48,6 @@ struct InnerPhysicsManager {
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    query_pipeline: QueryPipeline,
 
     // entity data
     entities: HashMap<u32, PhysicsManagerEntityData>,
@@ -65,8 +65,6 @@ impl InnerPhysicsManager {
             impulse_joint_set: ImpulseJointSet::new(),
             multibody_joint_set: MultibodyJointSet::new(),
             ccd_solver: CCDSolver::new(),
-            query_pipeline: QueryPipeline::new(),
-
             entities: HashMap::new(),
         }
     }
@@ -96,9 +94,9 @@ impl InnerPhysicsManager {
                     RigidBodyBuilder::kinematic_velocity_based()
                 }
             }
-            .position(isometry.clone())
-            .linvel(linvel.clone())
-            .angvel(angvel.clone())
+            .pose(isometry.clone().into())
+            .linvel(linvel.clone().into())
+            .angvel(angvel.clone().into())
             .enabled_rotations(false, true, false)
             .build();
 
@@ -167,20 +165,26 @@ impl InnerPhysicsManager {
         let rigidbody = self.rigid_body_set.get(*rigid_body_handle).unwrap();
         let collider_handle = rigidbody.colliders()[0];
         let collider = self.collider_set.get(collider_handle).unwrap();
-        if let Some((_, hit)) = self.query_pipeline.cast_shape(
-            &self.rigid_body_set,
-            &self.collider_set,
-            rigidbody.position(),
-            &Vector3::new(0.0, -1.0, 0.0),
-            collider.shape(),
-            ShapeCastOptions {
-                max_time_of_impact: max_distance,
-                target_distance: 0.0,
-                stop_at_penetration: true,
-                compute_impact_geometry_on_penetration: false,
-            },
-            QueryFilter::only_fixed(),
-        ) {
+        if let Some((_, hit)) = self
+            .broad_phase
+            .as_query_pipeline(
+                &DefaultQueryDispatcher,
+                &self.rigid_body_set,
+                &self.collider_set,
+                QueryFilter::only_fixed(),
+            )
+            .cast_shape(
+                rigidbody.position(),
+                [0.0, -1.0, 0.0].into(),
+                collider.shape(),
+                ShapeCastOptions {
+                    max_time_of_impact: max_distance,
+                    target_distance: 0.0,
+                    stop_at_penetration: true,
+                    compute_impact_geometry_on_penetration: false,
+                },
+            )
+        {
             (hit.time_of_impact, true)
         } else {
             (max_distance, false)
@@ -229,7 +233,7 @@ impl InnerPhysicsManager {
                 if intersecting_ground {
                     if linvel.y < 0.05 {
                         self.rigid_body_set[data.rigid_body_handle].set_linvel(
-                            Vector3::new(
+                            Vector::new(
                                 linvel.x,
                                 -integration_parameters.dt * gravity_y + (0.025 - dist),
                                 linvel.z,
@@ -240,11 +244,7 @@ impl InnerPhysicsManager {
                 } else if ground_just_below {
                     if linvel.y < 0.00 {
                         self.rigid_body_set[data.rigid_body_handle].set_linvel(
-                            Vector3::new(
-                                linvel.x,
-                                -integration_parameters.dt * gravity_y,
-                                linvel.z,
-                            ),
+                            Vector::new(linvel.x, -integration_parameters.dt * gravity_y, linvel.z),
                             true,
                         );
                     }
@@ -254,7 +254,7 @@ impl InnerPhysicsManager {
 
         // step physics
         self.physics_pipeline.step(
-            &Vector3::new(0.0, gravity_y, 0.0),
+            [0.0, gravity_y, 0.0].into(),
             &integration_parameters,
             &mut self.island_manager,
             &mut self.broad_phase,
@@ -264,7 +264,6 @@ impl InnerPhysicsManager {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
             &(),
             &(),
         );
@@ -297,8 +296,8 @@ impl Manager for PhysicsManager {
                 }
                 WorldChange::PhysicsSetVelocity { id, linvel, angvel } => {
                     let rigid_body = inner.get_mut_entity(*id).unwrap();
-                    rigid_body.set_linvel(*linvel, true);
-                    rigid_body.set_angvel(*angvel, true);
+                    rigid_body.set_linvel(linvel.clone().into(), true);
+                    rigid_body.set_angvel(angvel.clone().into(), true);
                 }
                 WorldChange::PhysicsApplyImpulse {
                     id,
@@ -306,8 +305,8 @@ impl Manager for PhysicsManager {
                     torque_impulse,
                 } => {
                     let rigid_body = inner.get_mut_entity(*id).unwrap();
-                    rigid_body.apply_impulse(*impulse, true);
-                    rigid_body.apply_torque_impulse(*torque_impulse, true);
+                    rigid_body.apply_impulse(impulse.clone().into(), true);
+                    rigid_body.apply_torque_impulse(torque_impulse.clone().into(), true);
                 }
                 _ => {}
             }
@@ -333,18 +332,21 @@ impl Manager for PhysicsManager {
                     let entity = entities.get(id).unwrap();
                     let mut changes = vec![];
 
-                    let new_isometry = *inner.rigid_body_set[*rigid_body_handle].position();
+                    let new_isometry = inner.rigid_body_set[*rigid_body_handle]
+                        .position()
+                        .clone()
+                        .into();
                     if entity.isometry != new_isometry {
                         changes.push(WorldChange::GlobalEntityUpdateIsometry(*id, new_isometry));
                     }
-                    let new_linvel = *inner.rigid_body_set[*rigid_body_handle].linvel();
-                    let new_angvel = *inner.rigid_body_set[*rigid_body_handle].angvel();
+                    let new_linvel = inner.rigid_body_set[*rigid_body_handle].linvel().into();
+                    let new_angvel = inner.rigid_body_set[*rigid_body_handle].angvel().into();
                     if let Some(physics_data) = &entity.physics_data {
                         if physics_data.linvel != new_linvel || physics_data.angvel != new_angvel {
                             changes.push(WorldChange::GlobalEntityUpdateVelocity {
                                 id: *id,
-                                linvel: new_linvel,
-                                angvel: new_angvel,
+                                linvel: new_linvel.into(),
+                                angvel: new_angvel.into(),
                             });
                         }
                         let should_be_grounded = *grounded && !*clipping;
